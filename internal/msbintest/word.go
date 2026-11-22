@@ -56,6 +56,9 @@ type DocFile struct {
 	// Narrow writes the text one byte to a character, which every
 	// character of it must fit.
 	Narrow bool
+	// Reserve leaves so many bytes free at the start of the table
+	// stream.
+	Reserve int
 }
 
 const (
@@ -205,7 +208,9 @@ func WordStreams(d DocFile) map[string][]byte {
 	bteChpx := pages(runs, false)
 
 	// The table stream.
-	var table []byte
+	// What an encrypted document says of its encryption is at the start
+	// of the table stream; room is left for it.
+	table := make([]byte, d.Reserve)
 	fc, lcb := make([]uint32, 93), make([]uint32, 93)
 	put := func(index int, data []byte) {
 		if len(data) == 0 {

@@ -57,6 +57,10 @@ const (
 	// VBA project, an embedded object) could not be read to its end; what
 	// was read is used.
 	WarnPartDamaged = warn.PartDamaged
+	// WarnDecrypted: the file was encrypted and has been decrypted, with
+	// the password given or, for a workbook, with the password Excel
+	// uses when none is set. Info; the message names the scheme.
+	WarnDecrypted = "msbin.decrypted"
 )
 
 // Extractor extracts Word, Excel and PowerPoint files in the binary
@@ -105,9 +109,12 @@ func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastco
 // Extract reads size bytes from r and returns the document.
 //
 // The format is decided from the file itself, never from a name. The
-// library is in development: workbooks and Word documents are read; of a
-// presentation the properties are, and the slides not yet (the part says
-// so, with part.failed).
+// library is in development: workbooks, Word documents and presentations
+// are read.
+//
+// An encrypted file is opened with Options.Password; a workbook
+// encrypted with the password Excel uses when none was set is opened
+// without one. The document then has the warning WarnDecrypted.
 //
 // An error wraps one of the gofastcore errors:
 //
@@ -116,7 +123,9 @@ func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastco
 //   - ErrMalformed: a compound file too damaged to say what it holds.
 //   - ErrUnsupported: a file that is none of the three formats; one of a
 //     generation that is not read (Excel 2 to 4, Word 2, PowerPoint 95
-//     and older); an encrypted file, which is not read yet.
+//     and older); a file encrypted in a way that is not read.
+//   - ErrPasswordRequired, ErrWrongPassword: the file is encrypted, and
+//     no password was given, or the one given does not open it.
 //   - ErrNoPartsSelected: Options.Parts selects none of the document's
 //     parts.
 //
@@ -162,7 +171,7 @@ func refusal(in detect.Info) error {
 	what := "the file is not a compound file, and so none of the binary Office formats (.doc, .xls, .ppt)"
 	switch {
 	case in.Format != "" && in.Read && in.Encryption != "":
-		what = in.Version + " file, encrypted (" + in.Encryption + "): encrypted files are not read yet"
+		what = in.Version + " file, encrypted in a way the file does not state: not read"
 	case in.Format != "" && in.Version != "":
 		what = in.Version + " file: this generation of the format is not read"
 	case in.Format != "":

@@ -6,8 +6,8 @@ model, [`gofastcore.Document`](https://github.com/AOShei/go-fast-core).
 Standard library and go-fast modules only.
 
 **Status: in development, nothing released.** Excel workbooks, Word
-documents and PowerPoint presentations are read. Encrypted files are refused
-for now.
+documents and PowerPoint presentations are read, encrypted ones with their
+password.
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) has the plan, phase by
 phase, and what each phase found.
 
@@ -79,6 +79,17 @@ What is read today:
   program stored, and a document held as a storage of the file (a workbook in
   a Word document), which is written out as a compound file of its own. A
   linked object is `input.external_reference`; nothing is fetched.
+- **Encrypted files**, with `Options.Password`: XOR obfuscation, the RC4
+  encryption of Office 97 and RC4 with a CryptoAPI key, for the three
+  formats. The password is checked against what the file keeps for that
+  before anything is decrypted: without one the error wraps
+  `ErrPasswordRequired`, with a wrong one `ErrWrongPassword`. A workbook
+  encrypted with the password Excel uses when none was set (a protected
+  workbook with no password to open it) is read without being given one. The
+  document has the warning `msbin.decrypted`, which names the scheme. These
+  schemes are weak: they are read because files kept in them exist. Not
+  read: the properties of an encrypted presentation, which are encrypted in a
+  stream of their own.
 - **Damaged containers**: a wrong byte-order mark, a directory whose chain of
   sectors breaks and lost short streams are read past, with `input.repaired`.
 
@@ -102,6 +113,7 @@ refused with a message that says which it is.
 | `internal/officeart`, `internal/media` | The drawing layer the three formats share: shapes, their properties, pictures |
 | `internal/chart` | A chart's data as a caption and a table |
 | `internal/grid` | The cells of a sheet into table blocks, as go-fast-ooxml does it |
+| `internal/crypt` | The three schemes of encryption: a password checked, and the keys it gives |
 | `internal/oleps` | Property sets: the document's properties |
 | `internal/vba`, `internal/stored` | The source of VBA modules, and the stored part they go to |
 | `internal/embed` | Embedded objects, handed on as files |

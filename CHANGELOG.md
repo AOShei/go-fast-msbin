@@ -37,3 +37,7 @@ and what each found.
   97 both, are read. The strings of a vector of properties are read as
   Office writes them (not padded), which had made the properties of many
   files look damaged.
+- Phase 7: encrypted files, opened with `Options.Password`: XOR obfuscation,
+  RC4 and RC4 CryptoAPI, for workbooks, Word documents and presentations.
+  `ErrPasswordRequired` and `ErrWrongPassword`; Excel's own password is
+  tried unasked; the warning `msbin.decrypted`.

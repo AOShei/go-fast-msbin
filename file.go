@@ -54,6 +54,7 @@ type File struct {
 	opened      []gofastcore.Warning // warnings about the document known when it was opened
 	projects    [][]string           // the storages that hold a VBA project
 	objects     []embed.Object       // the embedded objects
+	wordData    []byte               // a Word document's data stream, where it had to be decrypted
 	deck        []byte               // a presentation's stream of records
 	pictures    []byte               // and its stream of pictures
 	currentEdit uint32               // where the presentation's last edit is
@@ -157,7 +158,7 @@ func (e *Extractor) open(ctx context.Context, r io.ReaderAt, size int64, opts *g
 	if err != nil {
 		return nil, err
 	}
-	if cf == nil || !info.Read || info.Encryption != "" {
+	if cf == nil || !info.Read || info.Encryption == "encrypted" {
 		return nil, refusal(info)
 	}
 	f.cf, f.info = cf, info
@@ -221,6 +222,9 @@ func (f *File) reader() (*session, error) {
 	}
 	if f.word != nil {
 		data := func() []byte {
+			if f.wordData != nil {
+				return f.wordData // decrypted
+			}
 			s, err := f.stream("Data")
 			if err != nil {
 				return nil
@@ -313,6 +317,29 @@ func (f *File) load() error {
 				Message: fmt.Sprintf("the document's stream breaks off after %d of %d bytes; what was read of it is used", len(data), s.Size())})
 		}
 		f.word = data
+		if f.info.Encryption != "" {
+			// An encrypted document: its table stream, which the flags
+			// of its first bytes name, and its data stream are read and
+			// decrypted with it.
+			read := func(name string) []byte {
+				b := []byte{}
+				if s, err := f.stream(name); err == nil {
+					if got, _, _ := unit.ReadAll(s, s.Size()); got != nil {
+						b = got
+					}
+				}
+				return b
+			}
+			if f.info.Version == detect.Word97 {
+				name := "0Table"
+				if len(data) > 11 && data[11]&0x02 != 0 {
+					name = "1Table"
+				}
+				f.wordTable = read(name)
+			}
+			f.wordData = read("Data")
+			return f.decryptWord(f.wordTable, f.wordData)
+		}
 		return nil
 	}
 	if f.info.Format == detect.Ppt {
@@ -352,6 +379,9 @@ func (f *File) load() error {
 				f.pictures, _, _ = unit.ReadAll(s, s.Size())
 			}
 		}
+		if f.info.Encryption != "" {
+			return f.decryptDeck()
+		}
 		return nil
 	}
 	if f.info.Format != detect.Xls {
@@ -374,6 +404,9 @@ func (f *File) load() error {
 			Message: fmt.Sprintf("the workbook's stream breaks off after %d of %d bytes; what was read of it is used", len(data), s.Size())})
 	}
 	f.book = data
+	if f.info.Encryption != "" {
+		return f.decryptBook()
+	}
 	return nil
 }
 

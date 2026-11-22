@@ -405,6 +405,29 @@ Found on the way:
 - **What PowerPoint 2000 added is not where the rest is**: the document's part of it is inside the list of the document's other information, a shape's part inside the shape's own data, both wrapped in a record that is not marked as holding records.
 - **Not read**: sound and video; equations; the animation of a slide; text of a master's placeholders (it is the prompt, "Click to edit", and not content); the text of earlier edits that the last one no longer points to (decided on 2026-11-22: left out of this release).
 
+### Phase 7: result (2026-11-22)
+
+On branch `phase-7-encryption`: encrypted files of the three formats, opened with `Options.Password`.
+
+- **The schemes** (`internal/crypt`): XOR obfuscation (workbooks and Word documents), the RC4 encryption of Office 97, and RC4 with a key made by the CryptoAPI (all three formats; keys of 40 to 128 bits). The password is verified first, against the verifier the file keeps: `ErrPasswordRequired` with none, `ErrWrongPassword` with a wrong one. A header that cannot be read, or that names another algorithm than RC4, is `ErrUnsupported`.
+- **Workbooks**: the record that says how follows the first; the data of the records is decrypted and their headers are not, nor the few records and the one field the format leaves as they are; with RC4 the key changes every 1,024 bytes of the stream. **Excel's own password** is tried unasked, and the warning says so.
+- **Word documents**: the document's stream past its first 68 bytes (52 in Word 6/95), the table stream and the data stream; with RC4 a key to every 512 bytes.
+- **Presentations**: every object of the stream, its header with it, with the key of its number; the object that says how is found through the last edit. The pictures, each field of each on its own with the first key.
+- **How it is done**: the readers already hold their streams in memory, so a stream is decrypted in place once, when the file is opened, and the readers are not touched; sheets and slides are read in parallel as before. This is simpler than decrypting block by block under a stream interface, which the plan had foreseen, and costs no memory the readers did not already use. Decrypting a presentation is bounded by the size of its stream, whatever the lengths in it say.
+- **`msbin.decrypted`** (info) names the scheme and whether the password given or Excel's opened the file.
+
+**Measured:**
+
+| | |
+|---|---|
+| Encrypted files of the corpus opened | 16 of 20: 12 with the passwords their test suites give (`TestEncryptedCorpus` checks the text of the 11 that are not held out, and a picture of an encrypted presentation), 4 workbooks with Excel's own password. The other 4 need passwords that are not known |
+| Schemes verified on real files | XOR obfuscation (workbooks), RC4 (workbooks, Word), RC4 CryptoAPI (workbooks, Word, PowerPoint) |
+| Fuzzing | `FuzzEncrypted`, 32 million executions, no finding |
+
+- **Not verified on a real file: XOR obfuscation of a Word document.** The corpus has none, and neither LibreOffice nor Word since 97 writes one. It is tested against this project's own writer only, which was written from the same description.
+- **Not read**: the properties of an encrypted presentation, and of a Word document or workbook that encrypts them, which are in an encrypted stream of their own; such a file has the properties its plain streams hold, usually none.
+- msoffcrypto-tool was not needed as an oracle: the files with known passwords say in their text what they hold.
+
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).
 
 ## 8. Risks

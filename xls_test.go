@@ -258,7 +258,9 @@ func TestSheetsAndWhatTheyDeclare(tt *testing.T) {
 	for _, p := range doc.Parts {
 		names = append(names, p.Name)
 	}
-	if got := strings.Join(names, ","); got != "Shown,Hidden,Very hidden,Chart,Macros,Dialog,Empty" {
+	// The last part is the stored part, which a workbook with a macro
+	// sheet has.
+	if got := strings.Join(names, ","); got != "Shown,Hidden,Very hidden,Chart,Macros,Dialog,Empty," || doc.Parts[7].Kind != gofastcore.PartStored {
 		tt.Fatalf("parts: %s", got)
 	}
 	// The first sheet: a table, with the hidden row, the hidden column and

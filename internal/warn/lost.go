@@ -36,6 +36,13 @@ const (
 	CapMerges
 	CapCellStyles
 	CapNumberFormats
+	CapFormula
+	CapNames
+	CapExternalLinks
+	CapExternalNames
+	CapExternalSheets
+	CapSheetRefs
+	CapSharedFormulas
 	numCaps
 )
 
@@ -59,36 +66,49 @@ var caps = [numCaps]capInfo{
 	CapAddress:       {"addresses longer than " + itoa(MaxAddress) + " bytes were cut there", "address", "addresses"},
 	CapName:          {"names longer than " + itoa(MaxName) + " bytes were cut there", "name", "names"},
 
-	CapSheets:        {"sheets past " + itoa(MaxSheets) + " were not read", "sheet", "sheets"},
-	CapSheetCols:     {"cells past column " + itoa(MaxCols) + " of the sheet were not read", "cell", "cells"},
-	CapComments:      {"comments of a sheet past " + itoa(MaxComments) + " were not read", "comment", "comments"},
-	CapLinks:         {"hyperlinks of a sheet past " + itoa(MaxLinks) + " were not read", "hyperlink", "hyperlinks"},
-	CapMerges:        {"merged ranges of a sheet past " + itoa(MaxMerges) + " were not read; their cells are given unmerged", "range", "ranges"},
-	CapCellStyles:    {"cell formats and fonts of the workbook past " + itoa(MaxCellStyles) + " were not read; cells that use them show their values unformatted", "format", "formats"},
-	CapNumberFormats: {"number formats of the workbook past " + itoa(MaxNumberFormats) + " were not read; cells that use them show their values unformatted", "format", "formats"},
+	CapSheets:         {"sheets past " + itoa(MaxSheets) + " were not read", "sheet", "sheets"},
+	CapSheetCols:      {"cells past column " + itoa(MaxCols) + " of the sheet were not read", "cell", "cells"},
+	CapComments:       {"comments of a sheet past " + itoa(MaxComments) + " were not read", "comment", "comments"},
+	CapLinks:          {"hyperlinks of a sheet past " + itoa(MaxLinks) + " were not read", "hyperlink", "hyperlinks"},
+	CapMerges:         {"merged ranges of a sheet past " + itoa(MaxMerges) + " were not read; their cells are given unmerged", "range", "ranges"},
+	CapCellStyles:     {"cell formats and fonts of the workbook past " + itoa(MaxCellStyles) + " were not read; cells that use them show their values unformatted", "format", "formats"},
+	CapNumberFormats:  {"number formats of the workbook past " + itoa(MaxNumberFormats) + " were not read; cells that use them show their values unformatted", "format", "formats"},
+	CapFormula:        {"formulas longer than " + itoa(MaxFormula) + " bytes were not read back", "formula", "formulas"},
+	CapNames:          {"defined names past " + itoa(MaxNames) + " were not read", "name", "names"},
+	CapExternalLinks:  {"links to other workbooks past " + itoa(MaxExternalLinks) + " were not read; formulas that use them are not read back", "link", "links"},
+	CapExternalNames:  {"names of a linked workbook past " + itoa(MaxExternalNames) + " were not read; formulas that use them are not read back", "name", "names"},
+	CapExternalSheets: {"sheets of a linked workbook past " + itoa(MaxExternalNames) + " were not read; formulas that use them are not read back", "sheet", "sheets"},
+	CapSheetRefs:      {"references of the workbook's formulas to other sheets past " + itoa(MaxSheetRefs) + " were not read; formulas that use them are not read back", "reference", "references"},
+	CapSharedFormulas: {"shared formulas of a sheet past " + itoa(MaxSharedFormulas) + " were not kept; cells that use them give no formula", "formula", "formulas"},
 }
 
 // The bounds, where the code that keeps to them and the messages above
 // both need them.
 const (
-	MaxProjects      = 16
-	MaxProjectSize   = 1 << 28
-	MaxModules       = 1 << 12
-	MaxPropertyName  = clean.MaxLabel
-	MaxPropertyValue = 64 << 10
-	MaxCustomProps   = 256
-	MaxProperties    = 1 << 12
-	MaxObjects       = 1 << 12
-	MaxObjectDepth   = 64
-	MaxAddress       = clean.MaxAddress
-	MaxName          = clean.MaxLabel
-	MaxSheets        = 1 << 16
-	MaxCols          = 1 << 14
-	MaxComments      = 1 << 18
-	MaxLinks         = 1 << 18
-	MaxMerges        = 1 << 18
-	MaxCellStyles    = 1 << 17
-	MaxNumberFormats = 1 << 13
+	MaxProjects       = 16
+	MaxProjectSize    = 1 << 28
+	MaxModules        = 1 << 12
+	MaxPropertyName   = clean.MaxLabel
+	MaxPropertyValue  = 64 << 10
+	MaxCustomProps    = 256
+	MaxProperties     = 1 << 12
+	MaxObjects        = 1 << 12
+	MaxObjectDepth    = 64
+	MaxAddress        = clean.MaxAddress
+	MaxName           = clean.MaxLabel
+	MaxSheets         = 1 << 16
+	MaxCols           = 1 << 14
+	MaxComments       = 1 << 18
+	MaxLinks          = 1 << 18
+	MaxMerges         = 1 << 18
+	MaxCellStyles     = 1 << 17
+	MaxNumberFormats  = 1 << 13
+	MaxFormula        = 32 << 10
+	MaxNames          = 1 << 14
+	MaxExternalLinks  = 1 << 16
+	MaxExternalNames  = 1 << 16
+	MaxSheetRefs      = 1 << 16
+	MaxSharedFormulas = 1 << 20
 )
 
 // Message is the text of the warning for n items a bound left out.

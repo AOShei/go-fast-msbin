@@ -11,6 +11,7 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin/internal/clean"
 	"github.com/AOShei/go-fast-msbin/internal/numfmt"
+	"github.com/AOShei/go-fast-msbin/internal/ptg"
 	"github.com/AOShei/go-fast-msbin/internal/stored"
 	"github.com/AOShei/go-fast-msbin/internal/symbol"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
@@ -72,9 +73,18 @@ type Book struct {
 	// it is one. It is kept only for a workbook that has a symbol font.
 	rich    map[uint32][]fontRun
 	fonts   []symbol.Font
-	removed int      // control characters removed from shared strings
-	damaged []string // what could not be read to its end
-	docLost warn.Lost
+	removed int // control characters removed from shared strings
+
+	// What formulas refer to outside themselves, and what the workbook
+	// stores and shows on no sheet (formulas.go).
+	formulas    ptg.Book
+	names       []definedName
+	external    int       // links to other workbooks and files
+	unreadNames int       // defined names whose formulas are not read back
+	macroSheets bool      // the workbook has sheets of macros
+	lost        warn.Lost // what the bounds left out of the stored part
+	damaged     []string  // what could not be read to its end
+	docLost     warn.Lost
 
 	cells atomic.Int64 // cells that may still be kept
 }
@@ -108,6 +118,7 @@ func (b *Book) globals() {
 	var xfs []xf
 	codes := map[int]string{}
 	var scratch []byte
+	var links linkReader
 	at := 0
 	typ, ok := c.record(at)
 	if !ok || typ != recBOF {
@@ -173,9 +184,16 @@ func (b *Book) globals() {
 			c.b = body[6:]
 			name, _ := c.shortStr(scratch[:0])
 			scratch = name
+			// A formula names a sheet by its place in this list, the
+			// modules of the VBA project among them.
+			if len(links.sheets) < warn.MaxSheets {
+				shown, _ := clean.String(name, clean.Prose)
+				links.sheets = append(links.sheets, clean.Label(shown))
+			}
 			if ref.kind == dtVBA {
 				continue // a module: its source is read with the VBA project
 			}
+			b.macroSheets = b.macroSheets || ref.kind == dtMacro
 			if len(b.refs) >= warn.MaxSheets {
 				b.docLost.Add(warn.CapSheets, 1)
 				continue
@@ -187,6 +205,14 @@ func (b *Book) globals() {
 		case recSST:
 			b.fonts = fonts
 			b.strings(&c)
+		case recSupBook:
+			links.supBook(b, &c)
+		case recExternName:
+			links.externName(b, &c)
+		case recExternSheet:
+			links.externSheet(b, body)
+		case recName:
+			links.name(b, &c)
 		}
 	}
 	if !ended || c.short {
@@ -195,6 +221,7 @@ func (b *Book) globals() {
 
 	formats := map[uint16]*numfmt.Format{}
 	b.styles = make([]cellStyle, len(xfs))
+	links.finish(b)
 	b.fonts = fonts
 	for i, x := range xfs {
 		f, ok := formats[x.format]
@@ -367,7 +394,7 @@ func (b *Book) Len() int {
 
 // Stored returns the index of the stored part, or -1 if there is none.
 func (b *Book) Stored() int {
-	if !b.cfg.HasStored {
+	if !b.cfg.HasStored && len(b.names) == 0 && !b.macroSheets {
 		return -1
 	}
 	return max(len(b.refs), 1)
@@ -386,10 +413,7 @@ func (b *Book) Limited() bool { return false }
 // Read reads the sheet with the given index into a part.
 func (b *Book) Read(ctx context.Context, index int) *unit.Result {
 	if index == b.Stored() {
-		part := stored.NewPart(ctx, index+1)
-		b.cfg.Stored(ctx, part)
-		limited := part.Finish()
-		return &unit.Result{Part: part.Part, Tally: unit.Tally{Damaged: part.Damaged, Limited: limited}}
+		return b.readStored(ctx, index)
 	}
 	if len(b.refs) == 0 {
 		// A workbook with no sheets, or whose list of them could not be
@@ -414,6 +438,14 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 	if macros {
 		out = append(out, gofastcore.Warning{Code: gofastcore.WarnInputActiveContent, Severity: gofastcore.SeverityInfo,
 			Message: "macro sheets (Excel 4.0 macros); what their cells show is read, the macros are not"})
+	}
+	// The links to other workbooks are the document's, whichever sheets
+	// were read.
+	if b.external > 0 {
+		tallies = append(tallies[:len(tallies):len(tallies)], &unit.Tally{External: b.external})
+	}
+	if b.unreadNames > 0 {
+		tallies = append(tallies[:len(tallies):len(tallies)], &unit.Tally{Unread: map[string]int{unreadFormula: b.unreadNames}})
 	}
 	out = append(out, unit.Summarize(tallies, b.damaged)...)
 	if b.removed > 0 {

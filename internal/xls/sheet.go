@@ -80,25 +80,33 @@ type sheet struct {
 
 	// The row being read: the cells of a row are charged to the budgets
 	// together.
-	rowAt     int32
-	rowFirst  int   // the index of its first cell
-	rowBytes  int64 // the text of its cells
-	pending   int64 // text of the cells read and not yet in tables
-	last      pos   // the place of the last cell kept
-	removed   int   // control characters taken out
-	unmapped  int   // codes of symbol fonts with no character
-	isDate    bool  // the value just formatted was shown as a date
-	unread    map[string]int
-	macros    bool // the sheet is a sheet of macros
-	cutOff    bool // the records break off before their end
-	notSheet  bool // the workbook lists the sheet and does not hold it
-	cancelled bool
+	rowAt          int32
+	rowFirst       int   // the index of its first cell
+	rowBytes       int64 // the text of its cells
+	pending        int64 // text of the cells read and not yet in tables
+	last           pos   // the place of the last cell kept
+	removed        int   // control characters taken out
+	unmapped       int   // codes of symbol fonts with no character
+	isDate         bool  // the value just formatted was shown as a date
+	unread         map[string]int
+	unreadFormulas int  // formulas that could not be read back
+	macros         bool // the sheet is a sheet of macros
+	cutOff         bool // the records break off before their end
+	notSheet       bool // the workbook lists the sheet and does not hold it
+	cancelled      bool
 
 	// A formula whose result is a string: the string follows in a record
 	// of its own.
-	strAt    pos
-	strStyle *cellStyle
-	strWait  bool
+	strAt      pos
+	strStyle   *cellStyle
+	strWait    bool
+	strFormula string
+
+	// The formula of the cell being read, with Options.Cells, and the
+	// shared formulas of the sheet (cellformula.go).
+	formula string
+	shared  map[pos]sharedFormula
+	waiting *detailRef // the cell whose formula is the shared one that follows
 
 	details         []detail
 	detailsUnsorted bool
@@ -197,6 +205,10 @@ func (b *Book) sheet(ctx context.Context, index int) *sheet {
 
 // result is what reading the sheet gave.
 func (sh *sheet) result() *unit.Result {
+	if sh.unreadFormulas > 0 {
+		sh.unread[unreadFormula] += sh.unreadFormulas
+		sh.unreadFormulas = 0
+	}
 	return &unit.Result{Part: sh.part, Tally: unit.Tally{
 		Unread: sh.unread, Macros: sh.macros,
 		Limited: sh.capped || sh.g.Cut != "",
@@ -302,13 +314,18 @@ func (sh *sheet) record(typ uint16) bool {
 			break
 		}
 		sh.strWait = false
+		sh.formula = ""
+		if sh.b.opts != nil && sh.b.opts.Cells {
+			sh.cellFormula(b, row, col)
+		}
 		res := b[6:14]
 		if le.Uint16(res[6:]) != 0xFFFF {
 			return sh.number(row, col, style, math.Float64frombits(le.Uint64(res)))
 		}
 		switch res[0] {
 		case 0:
-			sh.strAt, sh.strStyle, sh.strWait = pos{row, col}, style, true
+			sh.strAt, sh.strStyle, sh.strWait, sh.strFormula = pos{row, col}, style, true, sh.formula
+			sh.formula = ""
 		case 1:
 			text := textFalse
 			if res[2] != 0 {
@@ -325,7 +342,12 @@ func (sh *sheet) record(typ uint16) bool {
 		sh.strWait = false
 		raw, _ := c.str(sh.raw[:0])
 		sh.raw = raw
+		sh.formula = sh.strFormula
 		return sh.str(sh.strAt.row, sh.strAt.col, sh.strStyle, sh.cellText(raw), gofastcore.CellText)
+	case recShrFmla:
+		sh.sharedFormula(b)
+	case recArray:
+		sh.arrayFormula(b)
 	case recLabel, recRString:
 		if row, col, style, ok := cell(9); ok {
 			c.b = b[6:]
@@ -570,8 +592,12 @@ func (sh *sheet) add(row, col int32, text string, hidden gofastcore.Display, kin
 		if n := len(sh.details); n > 0 && !before(sh.details[n-1].at, at) {
 			sh.detailsUnsorted = true
 		}
-		sh.details = append(sh.details, detail{at: at, typ: kind, value: value})
+		sh.details = append(sh.details, detail{at: at, typ: kind, value: value, formula: sh.formula})
+		if sh.waiting != nil && sh.waiting.at == at {
+			sh.waiting.index = len(sh.details) - 1
+		}
 	}
+	sh.formula = ""
 	return true
 }
 

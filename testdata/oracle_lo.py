@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""What LibreOffice shows of each .xls file of the corpus: every sheet saved
-as CSV with the cells as shown.
+"""What LibreOffice makes of each .xls file of the corpus.
 
     python3 testdata/oracle_lo.py testdata testdata/corpus/oracle-lo-xls
+    python3 testdata/oracle_lo.py testdata testdata/corpus/twins-xls --twin
 
-Writes <hash>.json.gz ({"sheets": {name: rows}}) for each file LibreOffice
-converts, and index.json. TestShownAgainstLibreOffice compares the library
-with them.
+Without --twin, every sheet is saved as CSV with the cells as shown, and
+<hash>.json.gz ({"sheets": {name: rows}}) is written for each file
+LibreOffice converts, with index.json; TestShownAgainstLibreOffice compares
+the library with them.
+
+With --twin, each file is saved as .xlsx, <hash>.xlsx: the same workbook in
+the newer format, which go-fast-ooxml reads. TestTwins compares what the
+two libraries make of the pair.
 
 LibreOffice is contained: a process group of its own that is killed as a
 group at the time limit, a limit on the size of any file it writes, a
@@ -34,7 +39,7 @@ def limits():
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_FILE, MAX_FILE))
 
 
-def convert(src, dest):
+def convert(src, dest, twin=False):
     work = tempfile.mkdtemp(prefix="gofastmsbin-lo-")
     try:
         profile, out = os.path.join(work, "profile"), os.path.join(work, "out")
@@ -42,7 +47,7 @@ def convert(src, dest):
         copy = os.path.join(work, "f.xls")
         shutil.copyfile(src, copy)
         proc = subprocess.Popen(["soffice", "-env:UserInstallation=file://" + profile, "--headless", "--norestore",
-                                 "--convert-to", FILTER, "--outdir", out, copy],
+                                 "--convert-to", "xlsx" if twin else FILTER, "--outdir", out, copy],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, preexec_fn=limits)
         status = "ok"
         try:
@@ -57,6 +62,12 @@ def convert(src, dest):
             proc.wait()
         if status != "ok":
             return {"error": status}
+        if twin:
+            made = os.path.join(out, "f.xlsx")
+            if not os.path.exists(made):
+                return {"error": "failed"}
+            shutil.move(made, dest)
+            return {"ok": True}
         sheets, left = {}, MAX_CELLS
         csv.field_size_limit(1 << 30)
         for name in sorted(os.listdir(out)):
@@ -81,6 +92,7 @@ def convert(src, dest):
 
 def main():
     testdata, dest = sys.argv[1], sys.argv[2]
+    twin = "--twin" in sys.argv[3:]
     os.makedirs(dest, exist_ok=True)
     entries = [e for e in json.load(open(os.path.join(testdata, "corpus.json"))) if e["format"] == "xls"]
     index_path = os.path.join(dest, "index.json")
@@ -89,7 +101,7 @@ def main():
 
     def one(e):
         try:
-            return e["sha256"], convert(os.path.join(testdata, e["path"]), os.path.join(dest, e["sha256"] + ".json.gz"))
+            return e["sha256"], convert(os.path.join(testdata, e["path"]), os.path.join(dest, e["sha256"] + (".xlsx" if twin else ".json.gz")), twin)
         except Exception as ex:
             return e["sha256"], {"error": type(ex).__name__}
 

@@ -1,0 +1,29 @@
+# Agent instructions kept local
+CLAUDE.md
+.claude/
+
+# Build output
+/bin/
+/dist/
+/gofastmsbin
+*.exe
+
+# Test, coverage and profiling output
+*.test
+*.out
+*.prof
+coverage.*
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Downloaded test corpus (see testdata/fetch.py)
+/testdata/corpus/

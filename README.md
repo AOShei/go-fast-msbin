@@ -5,11 +5,12 @@ Extracts the binary Office formats (Word `.doc`, Excel `.xls` and PowerPoint
 model, [`gofastcore.Document`](https://github.com/AOShei/go-fast-core).
 Standard library and go-fast modules only.
 
-**Status: in development, nothing released.** Excel workbooks, Word
-documents and PowerPoint presentations are read, encrypted ones with their
-password.
-[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) has the plan, phase by
-phase, and what each phase found.
+**Status: complete for a first release (0.1.0), not yet tagged.** The three
+formats are read, encrypted files with their password.
+[`SECURITY.md`](SECURITY.md) says what a hostile file cannot do and lists the
+limits; [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) has what each phase
+of the work found and measured; [`CHANGELOG.md`](CHANGELOG.md) what the
+release holds.
 
 | Format | Extensions | `Source.Format` | State |
 |---|---|---|---|
@@ -18,7 +19,7 @@ phase, and what each phase found.
 | Word 6/95 | `.doc` | `doc` | text, headings, tables, footnotes; no lists, hidden text or tracked changes |
 | PowerPoint 97-2003 | `.ppt`, `.pps`, `.pot` | `ppt` | read |
 
-What is read today:
+What is read:
 
 - **Workbooks**: one `sheet` part per sheet, in the workbook's order, named
   as the sheet is. Cells are given as they are shown, through their number
@@ -155,8 +156,8 @@ only; a program that uses it decides what reads embedded files, through
 | `internal/unit`, `internal/warn` | What the readers of the three formats share: the stream they read from, a part's result, the wording of bounds and repeated warnings |
 | `internal/cfb` | Compound files, the container of all three formats: sectors, allocation tables, directory, streams; writing one, and writing a storage of a file out as a file of its own |
 | `internal/detect` | What a file is: format, generation, encryption |
-| `internal/codepage`, `internal/numfmt`, `internal/symbol`, `internal/label`, `internal/clean` | Copied from the other go-fast libraries, for the readers to come: code pages, number formats, symbol fonts, list labels, the text conventions of the shared model |
-| `internal/msbintest` | Test harness: a second writer of compound files, writers of property sets and VBA projects, the corpus manifest |
+| `internal/codepage`, `internal/numfmt`, `internal/symbol`, `internal/label`, `internal/clean` | Copied from the other go-fast libraries: code pages, number formats, symbol fonts, list labels, the text conventions of the shared model |
+| `internal/msbintest` | Test harness: a second writer of compound files; writers of property sets, VBA projects, workbooks, Word documents and presentations, and of the three schemes of encryption; the corpus manifest |
 | `testdata/oracle_shared.py`, `oracle_xls.py`, `oracle_lo.py` | What olefile and olevba read of each corpus file, what xlrd reads of each workbook and what LibreOffice shows of it, for the tests that compare the library with them |
 | `testdata/corpus.json`, `testdata/fetch.py` | Manifest of 2,528 real files from the test suites of Apache POI, Apache Tika and LibreOffice, from data.gov.uk and from Govdocs1, and the script that downloads them. The files are not in the repository. One file in five is held out: scored, never looked at |
 | `bench` | The baselines of the tools in use today (`baseline.md`) and the script that measures them |
@@ -178,6 +179,7 @@ python3 testdata/oracle_lo.py testdata testdata/corpus/twins-ppt --twin --format
 go test -run TestPptTwins -v .
 go test -run 'TestCellsAgainstXlrd|TestShownAgainstLibreOffice|TestTwins|TestFormulasAgainstTwins' -v .
 go test -run '^$' -bench Large .                                               # needs bench/baseline.py generate
+go test -run 'TestSoak|TestAllocationBudgets' -v .                             # the whole corpus four ways; what the large files allocate
 go run ./cmd/gofastmsbin file.doc
 ```
 

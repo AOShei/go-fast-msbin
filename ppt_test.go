@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AOShei/go-fast-core"
 	gofastmsbin "github.com/AOShei/go-fast-msbin"
@@ -542,5 +543,69 @@ func richDeck() pptDeck {
 			notes:   t.PPTShapes(t.PPTShape{Top: 400, Left: 100, Right: 900, Bottom: 900, Placeholder: 12, Text: t.PPTText(2, "Say this first.\rThen this.")}.Bytes()),
 			layout:  1,
 		}},
+	}
+}
+
+// What a hostile presentation can make the reader do is bounded by the
+// limits on what a document may hold, not by what the file repeats: a
+// master's text that comes to nothing on every slide, and one chart
+// shown by thousands of shapes.
+func TestPresentationWorstCases(tt *testing.T) {
+	// A master with a thousand texts that are a field with nothing to put
+	// in it, and a thousand slides that follow it.
+	var texts [][]byte
+	for i := 0; i < 1000; i++ {
+		texts = append(texts, t.PPTShape{Top: int16(i + 1), Left: 100, Right: 900, Bottom: int16(i + 2), Text: t.PPTText(4, "*", t.PPTField(0x0FF7, 0))}.Bytes())
+	}
+	slides := make([]pptSlide, 1000)
+	for i := range slides {
+		slides[i] = pptSlide{layout: 1}
+	}
+	data := pptDeck{master: [][]byte{t.PPTShapes(texts...)}, slides: slides}.bytes()
+	start := time.Now()
+	doc, err := extract(data, &gofastcore.Options{Limits: gofastcore.Limits{MaxTextBytes: 1 << 20}})
+	if err != nil {
+		tt.Fatal(err)
+	}
+	cut := 0
+	for i := range doc.Parts {
+		if _, ok := warning(doc.Parts[i].Warnings, gofastcore.WarnLimitExceeded); ok {
+			cut++
+		}
+	}
+	if cut == 0 || time.Since(start) > 20*time.Second {
+		tt.Errorf("a master's empty texts: %d slides cut, %v", cut, time.Since(start))
+	}
+
+	// One chart, shown by three thousand shapes: each showing is charged
+	// to what the document may decode.
+	graph := t.BookFile(t.Workbook(nil, t.Sheet{Name: "Graph", Kind: 2, Records: [][]byte{
+		t.Rec(0x0004, t.Cat(t.U16(0, 1), []byte{0, 0, 0, 1, 0}, []byte("a"))...),
+		t.Rec(0x0003, t.Cat(t.U16(1, 1), []byte{0, 0, 0}, t.F64(1))...),
+		t.Rec(0x1002, make([]byte, 16)...), t.Rec(0x1033), t.Rec(0x1034),
+	}}))
+	var shapes [][]byte
+	for i := 0; i < 3000; i++ {
+		shapes = append(shapes, t.PPTShape{Top: 800, Left: 800, Right: 4000, Bottom: 3200, Data: t.PPTExObjRef(1)}.Bytes())
+	}
+	deck := pptDeck{
+		doc:     [][]byte{t.PPTContainer(t.PPTExObjList, 0, t.PPTExObj(1, 4, 40))},
+		objects: map[uint32][]byte{40: t.PPTStorage(graph, false)},
+		slides:  []pptSlide{{layout: 1, shapes: shapes}},
+	}
+	start = time.Now()
+	doc, err = extract(deck.bytes(), &gofastcore.Options{Limits: gofastcore.Limits{MaxDecodedBytes: 1 << 20}})
+	if err != nil {
+		tt.Fatal(err)
+	}
+	charts := 0
+	for _, b := range doc.Parts[0].Blocks {
+		if b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart {
+			charts++
+		}
+	}
+	_, limited := warning(doc.Parts[0].Warnings, gofastcore.WarnLimitExceeded)
+	if charts == 0 || charts >= 3000 || !limited || time.Since(start) > 20*time.Second {
+		tt.Errorf("one chart in 3000 shapes: %d read, limited %v, %v; warnings %+v", charts, limited, time.Since(start), doc.Parts[0].Warnings)
 	}
 }

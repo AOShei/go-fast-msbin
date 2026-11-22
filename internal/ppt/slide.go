@@ -92,8 +92,10 @@ type slideReader struct {
 	budget    bool
 	programs  int
 	damaged   []string // what could not be read
-	inOutline bool     // the text being read is one of the outline's
-	number    int      // the slide's number, as the presentation counts
+	texts     []int    // where each text of the slide begins in the outline
+	indexed   bool
+	inOutline bool // the text being read is one of the outline's
+	number    int  // the slide's number, as the presentation counts
 	hf        headFoot
 	styles    map[int][]paraStyle // of the slide's master, by kind of text
 }
@@ -389,20 +391,24 @@ func charRuns(b []byte, total int) []charRun {
 // outline returns the records of the text with the given number among
 // those the outline keeps for the slide.
 func (s *slideReader) outline(index int) []byte {
-	b := s.ref.outline
-	n := -1
-	for {
-		r, rest, ok := officeart.Next(b)
-		if !ok {
-			return nil
-		}
-		if r.Type == rtTextHeaderAtom {
-			if n++; n == index {
-				return b
+	if !s.indexed {
+		// Where each text begins, found once for the slide.
+		s.indexed = true
+		for b := s.ref.outline; ; {
+			r, rest, ok := officeart.Next(b)
+			if !ok {
+				break
 			}
+			if r.Type == rtTextHeaderAtom {
+				s.texts = append(s.texts, len(s.ref.outline)-len(b))
+			}
+			b = rest
 		}
-		b = rest
 	}
+	if index < 0 || index >= len(s.texts) {
+		return nil
+	}
+	return s.ref.outline[s.texts[index]:]
 }
 
 // paraStyle is what a run of the styles says of its paragraphs.
@@ -898,16 +904,21 @@ func (d *Deck) slide(ctx context.Context, index int) *unit.Result {
 		for from := m; from != nil; from = from.parent {
 			for i := range from.static {
 				it := &from.static[i]
-				if from != m && repeats(m.static, it) {
+				if from != m && m.has[sameAs(it)] {
 					// A title master often repeats what its master has, in
 					// the same place; a reader sees it once.
 					continue
 				}
 				if it.fields && it.raw != nil {
-					// Its fields say what this slide puts in them.
-					again := item{at: it.at, placed: it.placed, placeholder: -1, textKind: -1, hidden: it.hidden}
+					// Its fields say what this slide puts in them. A
+					// text that comes to nothing is paid for all the
+					// same, so that a master cannot make every slide
+					// read it for nothing without end.
+					again := item{at: it.at, placed: it.placed, placeholder: -1, textKind: -1, hidden: it.hidden, blip: it.blip, alt: it.alt}
 					s.text(it.raw, &again)
-					it = &again
+					if it = &again; len(it.paras) == 0 && !s.take(gofastcore.BlockCost) {
+						break
+					}
 				}
 				s.static(&part, it)
 			}
@@ -931,6 +942,9 @@ func (d *Deck) slide(ctx context.Context, index int) *unit.Result {
 			// fields.
 			it := item{at: f.at, placed: f.placed, placeholder: f.placeholder, textKind: -1, hidden: f.hidden}
 			s.text(f.raw, &it)
+			if len(it.paras) == 0 && !s.take(gofastcore.BlockCost) {
+				break // as above: what comes to nothing is paid for
+			}
 			s.emit(&part, &it, false)
 		}
 	}
@@ -976,7 +990,7 @@ func (d *Deck) slide(ctx context.Context, index int) *unit.Result {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, warn.TextCut("slide"))
 	}
 	if s.budget {
-		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached; pictures from there on are named and not read")
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached; pictures from there on are named and not read, and charts are not read")
 	}
 	capped := s.lost.Say(&part)
 	hasText, hasImage := false, s.sawImage
@@ -1172,13 +1186,22 @@ func (s *slideReader) chart(part *gofastcore.Part, it *item, place func(*gofastc
 	if decoded != nil {
 		left = decoded.Left()
 	}
+	// The chart's file is charged to what the document may decode each
+	// time it is read, compressed or not: a presentation can show one
+	// object in as many shapes as it likes.
 	data, compressed, ok := s.d.storage(it.object, left)
-	if ok && compressed && !decoded.Take(int64(len(data))) {
-		ok = false
+	if ok && !decoded.Take(int64(len(data))) {
+		s.budget = true
+		return false
 	}
 	if !ok {
-		s.budget = s.budget || compressed
-		s.damaged = append(s.damaged, "a chart")
+		// A compressed file that does not expand within what is left is
+		// over the limit; any other that cannot be read is damaged.
+		if compressed && decoded != nil && decoded.Left() <= left {
+			s.budget = true
+		} else {
+			s.damaged = append(s.damaged, "a chart")
+		}
 		return false
 	}
 	blocks, cut, ok := s.d.cfg.Chart(s.ctx, data)
@@ -1258,23 +1281,23 @@ func (s *slideReader) static(part *gofastcore.Part, it *item) {
 	}
 }
 
-// repeats reports whether one of items is the same text or picture as it
-// in the same place.
-func repeats(items []item, it *item) bool {
-	for i := range items {
-		o := &items[i]
-		if o.at != it.at || o.blip != it.blip || o.placeholder != it.placeholder || len(o.paras) != len(it.paras) {
-			continue
-		}
-		same := true
-		for k := range o.paras {
-			same = same && o.paras[k].text == it.paras[k].text
-		}
-		if same {
-			return true
-		}
+// same is what makes two things of a master the same to a reader: the
+// place, the picture, the kind of placeholder and the text.
+type same struct {
+	at          rect
+	blip        int
+	placeholder int
+	text        string
+}
+
+// sameAs gives what an item is compared by.
+func sameAs(it *item) same {
+	var sb strings.Builder
+	for i := range it.paras {
+		sb.WriteString(it.paras[i].text)
+		sb.WriteByte('\r')
 	}
-	return false
+	return same{it.at, it.blip, it.placeholder, sb.String()}
 }
 
 // auto returns the automatic numbering of a paragraph of a shape.

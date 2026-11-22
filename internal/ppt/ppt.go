@@ -84,6 +84,7 @@ const (
 const (
 	maxEdits   = 1 << 16 // edits followed back from the last
 	maxPersist = 1 << 22 // objects of the persist directory
+	maxFoot    = 64      // places for the date, the footer and the number kept of a master
 )
 
 // Config is what the caller gives beyond the streams.
@@ -444,7 +445,7 @@ func Open(data []byte, opts *gofastcore.Options, cfg Config) *Deck {
 	// the presentation or of the master it follows, and what it puts on
 	// every slide.
 	for i, ref := range d.masterRefs {
-		m := &master{styles: map[int][]paraStyle{}}
+		m := &master{styles: map[int][]paraStyle{}, has: map[same]bool{}}
 		obj, ok := d.object(ref.persist)
 		if ok {
 			officeart.Walk(obj.Body, func(c officeart.Rec, depth int) bool {
@@ -488,11 +489,13 @@ func Open(data []byte, opts *gofastcore.Options, cfg Config) *Deck {
 			for _, it := range r.shapes(drawingOf(obj)) {
 				switch {
 				case it.placeholder == phMasterDate || it.placeholder == phMasterNumber || it.placeholder == phMasterFooter:
-					if !repeats(m.foot, &it) {
+					if key := sameAs(&it); !m.has[key] && len(m.foot) < maxFoot {
+						m.has[key] = true
 						m.foot = append(m.foot, it)
 					}
-				case it.placeholder < 0 && (len(it.paras) > 0 || it.blip > 0) && it.rows == nil:
-					if !repeats(m.static, &it) {
+				case it.placeholder < 0 && (len(it.paras) > 0 || it.blip > 0 || it.fields) && it.rows == nil:
+					if key := sameAs(&it); !m.has[key] {
+						m.has[key] = true
 						m.static = append(m.static, it)
 					}
 				}
@@ -535,6 +538,7 @@ type master struct {
 	foot   []item              // the places of the date, the footer and the slide's number
 	parent *master             // the master a title master follows
 	follow bool                // it shows its parent's shapes too
+	has    map[same]bool       // what it holds, for telling a repeat
 }
 
 // outlineKey names a text of the outline: the slide's number and the
@@ -694,7 +698,7 @@ func (d *Deck) storage(id uint32, limit int64) (data []byte, compressed, ok bool
 		return nil, false, false
 	}
 	if r.Inst != 1 {
-		return r.Body, false, int64(len(r.Body)) <= limit
+		return r.Body, false, true // as it is in the stream: nothing is expanded
 	}
 	if len(r.Body) < 4 {
 		return nil, true, false

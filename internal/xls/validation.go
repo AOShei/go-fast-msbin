@@ -103,7 +103,7 @@ func (sh *sheet) validation(b []byte) {
 			sh.unreadFormulas++
 			return
 		}
-		v.source = text
+		v.source = blockFormula(text)
 	}
 	sh.lists = append(sh.lists, v)
 }

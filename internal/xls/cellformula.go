@@ -25,6 +25,13 @@ func formulaText(rgce, extra []byte, book *ptg.Book, at ptg.Place) (string, bool
 	return text, true
 }
 
+// blockFormula is a formula as the text of a block has it: the ligatures a
+// string in it may hold are written out, as in all block text.
+func blockFormula(text string) string {
+	out, _ := clean.String([]byte(text), clean.Ligatures)
+	return out
+}
+
 // sharedFormula is a formula several cells share: written once, with
 // references relative to the cell that uses it ([MS-XLS] 2.4.260).
 type sharedFormula struct {

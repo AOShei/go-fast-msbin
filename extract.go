@@ -108,9 +108,8 @@ func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastco
 
 // Extract reads size bytes from r and returns the document.
 //
-// The format is decided from the file itself, never from a name. The
-// library is in development: workbooks, Word documents and presentations
-// are read.
+// The format is decided from the file itself, never from a name: a Word
+// document, a workbook or a presentation of the binary formats.
 //
 // An encrypted file is opened with Options.Password; a workbook
 // encrypted with the password Excel uses when none was set is opened

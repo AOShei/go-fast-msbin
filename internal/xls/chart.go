@@ -492,7 +492,13 @@ func (sh *sheet) readChart() *chart.Chart {
 		for i, c := range across {
 			cats[i] = cell(0, c)
 		}
-		for _, r := range order(rows) {
+		// No more rows than keep the table within what a chart may hold.
+		down := order(rows)
+		if most := warn.MaxChartTotal / max(len(across), 1); len(down) > most {
+			sh.lost.Add(warn.CapChartTotal, 1)
+			down = down[:most]
+		}
+		for _, r := range down {
 			vals := make([]string, len(across))
 			for i, c := range across {
 				vals[i] = cell(r, c)

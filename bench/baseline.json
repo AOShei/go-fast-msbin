@@ -1,0 +1,112 @@
+{
+ "corpus": {
+  "calamine": {
+   "cells": 18142562,
+   "errors by type": {
+    "CalamineError": 37,
+    "PanicException": 3,
+    "PasswordError": 7
+   },
+   "failed": 47,
+   "files": 1111,
+   "over 60 s": 0,
+   "read": 1064,
+   "seconds for the files read": 2.91
+  },
+  "files": {
+   "doc": 907,
+   "ppt": 510,
+   "xls": 1111
+  },
+  "libreoffice doc": {
+   "converted to": "txt:Text",
+   "files": 40,
+   "median seconds a file": 2.17,
+   "megabytes": 9.8,
+   "ok": 40
+  },
+  "libreoffice ppt": {
+   "converted to": "pptx",
+   "failed": 1,
+   "files": 40,
+   "median seconds a file": 2.17,
+   "megabytes": 22.8,
+   "ok": 39
+  },
+  "libreoffice xls": {
+   "converted to": "csv",
+   "failed": 2,
+   "files": 40,
+   "median seconds a file": 2.07,
+   "megabytes": 9.9,
+   "ok": 38
+  },
+  "xlrd": {
+   "cells": 18130932,
+   "errors by type": {
+    "AssertionError": 2,
+    "BadZipFile": 1,
+    "CompDocError": 16,
+    "FormulaError": 2,
+    "KeyError": 2,
+    "UnicodeDecodeError": 1,
+    "XLRDError": 23,
+    "error": 6
+   },
+   "failed": 53,
+   "files": 1111,
+   "over 60 s": 0,
+   "read": 1058,
+   "seconds for the files read": 11.29
+  }
+ },
+ "generated": {
+  "large.doc": {
+   "bytes": 19471360,
+   "written by": "LibreOffice, from go-fast-ooxml's large.docx (1.5 million words)"
+  },
+  "large.ppt": {
+   "bytes": 7581184,
+   "written by": "LibreOffice, from go-fast-ooxml's large.pptx (1,500 slides)"
+  },
+  "large.xls": {
+   "bytes": 37719040,
+   "content": "3 sheets of 65,536 rows by 10 columns: 1,966,080 cells",
+   "written by": "xlwt"
+  }
+ },
+ "large": {
+  "large.doc": {
+   "libreoffice": {
+    "converted to": "txt:Text",
+    "peak MB": 910,
+    "seconds": 8.07,
+    "status": "ok"
+   }
+  },
+  "large.ppt": {
+   "libreoffice": {
+    "converted to": "pptx",
+    "peak MB": 1050,
+    "seconds": 7.16,
+    "status": "ok"
+   }
+  },
+  "large.xls": {
+   "calamine": {
+    "peak MB": 215,
+    "seconds": 0.22
+   },
+   "libreoffice": {
+    "converted to": "csv",
+    "peak MB": 907,
+    "seconds": 3.01,
+    "status": "ok"
+   },
+   "xlrd": {
+    "peak MB": 161,
+    "seconds": 1.09
+   }
+  }
+ }
+}

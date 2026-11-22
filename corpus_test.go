@@ -130,6 +130,8 @@ func outcome(err error) string {
 	case errors.Is(err, gofastcore.ErrUnsupported):
 		msg := strings.TrimSuffix(strings.TrimPrefix(err.Error(), "gofastmsbin: "), ": "+gofastcore.ErrUnsupported.Error())
 		return msg
+	case errors.Is(err, gofastcore.ErrPasswordRequired):
+		return "encrypted: a password is required"
 	case errors.Is(err, gofastcore.ErrMalformed):
 		return "malformed"
 	case errors.Is(err, gofastcore.ErrLimitExceeded):

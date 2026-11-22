@@ -15,6 +15,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin/internal/clean"
+	"github.com/AOShei/go-fast-msbin/internal/crypt"
 	"github.com/AOShei/go-fast-msbin/internal/officeart"
 	"github.com/AOShei/go-fast-msbin/internal/stored"
 	"github.com/AOShei/go-fast-msbin/internal/symbol"
@@ -52,6 +53,7 @@ const (
 	rtUserEditAtom        = 0x0FF5
 	rtExOleObjStg         = 0x1011
 	rtPersistDirectory    = 0x1772
+	rtCryptSession        = 0x2F14
 	rtProgTags            = 0x1388
 	rtList                = 0x07D0
 	rtBinaryTagData       = 0x138B
@@ -138,6 +140,138 @@ type Deck struct {
 	outline9         map[outlineKey][]auto // the automatic numbers of the outline's texts
 }
 
+// directory follows the edits from the last back to the first: each
+// names the persist directory of what it changed, and the last to name
+// an object has it as it now is ([MS-PPT] 2.1.2). It returns the number
+// of the document's object, and of the object that holds what an
+// encrypted presentation says of its encryption, or 0.
+func (d *Deck) directory(at uint32) (doc, session uint32) {
+	if edit, ok := d.rec(at); at == 0 || !ok || edit.Type != rtUserEditAtom {
+		// The Current User stream does not lead to an edit: the last
+		// edit the stream holds is used.
+		at = 0
+		for b := d.data; ; {
+			r, rest, ok := officeart.Next(b)
+			if !ok {
+				break
+			}
+			if r.Type == rtUserEditAtom {
+				at = uint32(len(d.data) - len(b))
+			}
+			b = rest
+		}
+		d.found = at != 0
+	}
+	seen := map[uint32]bool{}
+	for n := 0; at != 0 && n < maxEdits && !seen[at]; n++ {
+		seen[at] = true
+		edit, ok := d.rec(at)
+		if !ok || edit.Type != rtUserEditAtom || len(edit.Body) < 20 {
+			d.damaged = append(d.damaged, "the chain of edits")
+			break
+		}
+		if doc == 0 {
+			doc = le.Uint32(edit.Body[16:])
+			if len(edit.Body) >= 32 {
+				session = le.Uint32(edit.Body[28:])
+			}
+		}
+		if dir, ok := d.rec(le.Uint32(edit.Body[12:])); ok && dir.Type == rtPersistDirectory {
+			b := dir.Body
+			for len(b) >= 4 {
+				head := le.Uint32(b)
+				id, count := head&0xFFFFF, int(head>>20)
+				b = b[4:]
+				for k := 0; k < count && len(b) >= 4; k, b = k+1, b[4:] {
+					if _, later := d.persist[id+uint32(k)]; !later && len(d.persist) < maxPersist {
+						d.persist[id+uint32(k)] = le.Uint32(b)
+					}
+				}
+			}
+		} else {
+			d.damaged = append(d.damaged, "a persist directory")
+		}
+		at = le.Uint32(edit.Body[8:])
+	}
+	return doc, session
+}
+
+// Decrypt decrypts in place the objects of an encrypted presentation and
+// its stream of pictures ([MS-PPT] 2.3.7): each object, its header with
+// it, with the key of its number; of a picture each field on its own
+// with the first key. open is given what the presentation says of its
+// encryption, and returns the key or why there is none.
+func Decrypt(data, pictures []byte, currentEdit uint32, open func(header []byte) (*crypt.Key, error)) error {
+	d := &Deck{data: data, persist: map[uint32]uint32{}}
+	_, session := d.directory(currentEdit)
+	info, ok := d.object(session)
+	if !ok || session == 0 || info.Type != rtCryptSession {
+		return crypt.ErrHeader
+	}
+	key, err := open(info.Body)
+	if err != nil {
+		return err
+	}
+	// The objects in the order of their places: an object ends where the
+	// next begins at the latest, so that what is decrypted is no more
+	// than the stream holds, whatever the lengths in it say.
+	type object struct{ at, id uint32 }
+	objects := make([]object, 0, len(d.persist))
+	for id, at := range d.persist {
+		if id != session && int64(at)+8 <= int64(len(data)) {
+			objects = append(objects, object{at, id})
+		}
+	}
+	sort.Slice(objects, func(i, j int) bool {
+		if objects[i].at != objects[j].at {
+			return objects[i].at < objects[j].at
+		}
+		return objects[i].id < objects[j].id
+	})
+	for i, o := range objects {
+		if i > 0 && objects[i-1].at == o.at {
+			continue // named twice
+		}
+		end := int64(len(data))
+		if i+1 < len(objects) && objects[i+1].at > o.at {
+			end = int64(objects[i+1].at)
+		}
+		if int64(o.at)+8 > end {
+			continue
+		}
+		c := key.Block(data[o.at:o.at+8], o.id)
+		size := int64(le.Uint32(data[o.at+4:]))
+		body := data[o.at+8 : min(int64(o.at)+8+size, end)]
+		c.XORKeyStream(body, body)
+	}
+	// The pictures: a record's header, the identifiers of the picture,
+	// what is said of a metafile or the one byte before another kind of
+	// picture, and the picture, each encrypted from the start of the
+	// first key's run.
+	for b := pictures; len(b) >= 8; {
+		key.Block(b[:8], 0)
+		inst, typ, size := le.Uint16(b)>>4, le.Uint16(b[2:]), int64(le.Uint32(b[4:]))
+		body := b[8:min(8+size, int64(len(b)))]
+		b = b[8+len(body):]
+		field := func(n int) {
+			n = min(n, len(body))
+			key.Block(body[:n], 0)
+			body = body[n:]
+		}
+		field(16)
+		if inst&1 != 0 {
+			field(16) // a second identifier
+		}
+		if typ >= 0xF01A && typ <= 0xF01C {
+			field(34)
+		} else {
+			field(1)
+		}
+		field(len(body))
+	}
+	return nil
+}
+
 // rec reads the record at offset at of the stream.
 func (d *Deck) rec(at uint32) (officeart.Rec, bool) {
 	if int64(at)+8 > int64(len(d.data)) {
@@ -162,55 +296,7 @@ func (d *Deck) object(id uint32) (officeart.Rec, bool) {
 // cannot be read has one part that says so.
 func Open(data []byte, opts *gofastcore.Options, cfg Config) *Deck {
 	d := &Deck{data: data, opts: opts, cfg: cfg, persist: map[uint32]uint32{}, notes: map[uint32]uint32{}, links: map[uint32]string{}, byRef: map[uint32]uint32{}, graphs: map[uint32]bool{}, first: 1, outline9: map[outlineKey][]auto{}}
-	// The edits, from the last back to the first: each names the persist
-	// directory of what it changed, and the last to name an object has
-	// it as it now is ([MS-PPT] 2.1.2).
-	doc := uint32(0)
-	at := cfg.CurrentEdit
-	if edit, ok := d.rec(at); at == 0 || !ok || edit.Type != rtUserEditAtom {
-		// The Current User stream does not lead to an edit: the last
-		// edit the stream holds is used.
-		at = 0
-		for b := data; ; {
-			r, rest, ok := officeart.Next(b)
-			if !ok {
-				break
-			}
-			if r.Type == rtUserEditAtom {
-				at = uint32(len(data) - len(b))
-			}
-			b = rest
-		}
-		d.found = at != 0
-	}
-	seen := map[uint32]bool{}
-	for n := 0; at != 0 && n < maxEdits && !seen[at]; n++ {
-		seen[at] = true
-		edit, ok := d.rec(at)
-		if !ok || edit.Type != rtUserEditAtom || len(edit.Body) < 20 {
-			d.damaged = append(d.damaged, "the chain of edits")
-			break
-		}
-		if doc == 0 {
-			doc = le.Uint32(edit.Body[16:])
-		}
-		if dir, ok := d.rec(le.Uint32(edit.Body[12:])); ok && dir.Type == rtPersistDirectory {
-			b := dir.Body
-			for len(b) >= 4 {
-				head := le.Uint32(b)
-				id, count := head&0xFFFFF, int(head>>20)
-				b = b[4:]
-				for k := 0; k < count && len(b) >= 4; k, b = k+1, b[4:] {
-					if _, later := d.persist[id+uint32(k)]; !later && len(d.persist) < maxPersist {
-						d.persist[id+uint32(k)] = le.Uint32(b)
-					}
-				}
-			}
-		} else {
-			d.damaged = append(d.damaged, "a persist directory")
-		}
-		at = le.Uint32(edit.Body[8:])
-	}
+	doc, _ := d.directory(cfg.CurrentEdit)
 	root, ok := d.object(doc)
 	if !ok || root.Type != rtDocument {
 		d.damaged = append(d.damaged, "the document")

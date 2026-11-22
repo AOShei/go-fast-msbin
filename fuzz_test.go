@@ -217,3 +217,42 @@ func FuzzPresentation(f *testing.F) {
 		checkOutcome(t, small, err2)
 	})
 }
+
+// FuzzEncrypted feeds arbitrary bytes to the readers as the streams of an
+// encrypted file, with the password the seeds were encrypted with: what
+// the file says of its encryption, and what a key makes of bytes that
+// were never encrypted with it.
+func FuzzEncrypted(f *testing.F) {
+	book := msbintest.Workbook(styles, msbintest.Sheet{Name: "First", Records: [][]byte{msbintest.Label(0, 0, xfGeneral, "a cell"), msbintest.Number(1, 0, xfGeneral, 2)}})
+	for _, scheme := range []int{msbintest.CryptXOR, msbintest.CryptRC4, msbintest.CryptAPI} {
+		f.Add(uint8(0), msbintest.EncryptWorkbook(book, scheme, "pw"), []byte{})
+		streams := msbintest.WordStreams(msbintest.DocFile{Styles: docStyles, Reserve: 256, Main: []msbintest.DocPara{{Text: "A heading", Style: 1}, {Text: "and text"}}})
+		msbintest.EncryptWord(streams, scheme, "pw")
+		f.Add(uint8(1), streams["WordDocument"], streams["1Table"])
+	}
+	group, pictures := msbintest.PPTPictures(msbintest.PNG(4, 3))
+	deck := richDeck()
+	deck.doc = append(deck.doc, group)
+	var file msbintest.PPTFile
+	streams := file.Encrypt(deck.all(), pptDoc, pictures, "pw")
+	f.Add(uint8(2), streams["PowerPoint Document"], streams["Pictures"])
+	user := streams["Current User"]
+	f.Fuzz(func(t *testing.T, kind uint8, a, b []byte) {
+		if len(a)+len(b) > 1<<20 {
+			return
+		}
+		timer := time.AfterFunc(5*time.Second, func() { panic("Extract took more than 5s") })
+		defer timer.Stop()
+		var data []byte
+		switch kind % 3 {
+		case 0:
+			data = msbintest.Compound(map[string][]byte{"Workbook": a})
+		case 1:
+			data = msbintest.Compound(map[string][]byte{"WordDocument": a, "1Table": b, "0Table": b, "Data": b})
+		default:
+			data = msbintest.Compound(map[string][]byte{"PowerPoint Document": a, "Pictures": b, "Current User": user})
+		}
+		doc, err := extract(data, &gofastcore.Options{Password: "pw", Images: gofastcore.ImagesData})
+		checkOutcome(t, doc, err)
+	})
+}

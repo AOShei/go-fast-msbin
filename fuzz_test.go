@@ -62,6 +62,10 @@ func FuzzExtract(f *testing.F) {
 		msbintest.Sheet{Name: "S", Records: [][]byte{msbintest.LabelSST(0, 0, xfGeneral, 0), msbintest.MulRK(0, 1, xfTwo, 1, 2), msbintest.Comment(0, 0, 1, "A", "note")}},
 		msbintest.Sheet{Name: "T", State: 2, Records: [][]byte{msbintest.Number(0, 0, xfDate, 36526)}})
 	f.Add(msbintest.Compound(workbook))
+	// A Word document, and one of Word 95.
+	f.Add(msbintest.Compound(msbintest.WordStreams(msbintest.DocFile{Styles: docStyles, Main: []msbintest.DocPara{
+		{Text: "A heading", Style: 1}, {Text: "Text \x13 PAGE \x14 7\x15 and a note.\x02"}}, Footnotes: [][]msbintest.DocPara{{{Text: "\x02 note"}}}})))
+	f.Add(msbintest.Compound(map[string][]byte{"WordDocument": msbintest.Word6Stream(0x0419, "\xcf\xf0\x02\ra\x07b\x07\x07\x13 PAGE \x14"+"7\x15\r", "\x02 n")}))
 	// A workbook of Excel 95.
 	f.Add(msbintest.Compound(map[string][]byte{"Book": msbintest.Workbook5(
 		[][]byte{msbintest.CodePage(1251), msbintest.Font5("Arial"), msbintest.Format5(164, "0.0"), msbintest.XF5(0, 0), msbintest.XF5(0, 164)},

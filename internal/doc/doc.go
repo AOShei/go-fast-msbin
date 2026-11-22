@@ -59,6 +59,7 @@ type Doc struct {
 	hdd       []int64  // where each header and footer begins, in its story
 	bookmarks map[int64]string
 	drawing   *drawing
+	variables []variable
 	fields    int // fields of the main text, for bounding
 
 	damaged []string
@@ -108,7 +109,7 @@ func Open(f *fib, stream, table []byte, opts *gofastcore.Options, cfg Config) *D
 	d := &Doc{f: f, stream: stream, table: table, opts: opts, cfg: cfg}
 	d.txt.stream = stream
 	var damaged bool
-	d.txt.pieces, d.prcs, damaged = readPieces(f.part(table, fcClx), int64(len(stream)))
+	d.txt.pieces, d.prcs, damaged = readPieces(f.part(table, fcClx), int64(len(stream)), false)
 	if damaged || len(d.txt.pieces) == 0 {
 		d.damaged = append(d.damaged, "the piece table")
 	}
@@ -176,6 +177,7 @@ func Open(f *fib, stream, table []byte, opts *gofastcore.Options, cfg Config) *D
 	d.hdd, _ = plc(f.part(table, fcPlcfHdd), 0)
 
 	d.drawing = d.readDrawing()
+	d.variables = readVariables(f.part(table, fcStwUser))
 
 	// Bookmarks: their names, and where each begins.
 	names := sttb(f.part(table, fcSttbfBkmk))
@@ -245,7 +247,7 @@ func wide(b []byte) string {
 // Len returns the number of parts: the body, and the stored part if
 // there is one.
 func (d *Doc) Len() int {
-	if d.cfg.HasStored {
+	if d.Stored() >= 0 {
 		return 2
 	}
 	return 1
@@ -253,10 +255,52 @@ func (d *Doc) Len() int {
 
 // Stored returns the index of the stored part, or -1.
 func (d *Doc) Stored() int {
-	if d.cfg.HasStored {
+	if d.cfg.HasStored || len(d.variables) > 0 {
 		return 1
 	}
 	return -1
+}
+
+// variable is a document variable: a name and a value a program stored
+// in the document for its fields and macros.
+type variable struct{ name, value string }
+
+// maxVariables bounds the document variables read.
+const maxVariables = 1 << 14
+
+// readVariables reads the document variables (StwUser, [MS-DOC] 2.9.298):
+// a table of their names, each with four bytes beside it, and then their
+// values in the same order, each a count of characters and the
+// characters.
+func readVariables(b []byte) []variable {
+	if len(b) < 6 || le.Uint16(b) != 0xFFFF {
+		return nil
+	}
+	count, extra := int(le.Uint16(b[2:])), int(le.Uint16(b[4:]))
+	b = b[6:]
+	var out []variable
+	for i := 0; i < count && len(b) >= 2 && len(out) < maxVariables; i++ {
+		n := int(le.Uint16(b))
+		b = b[2:]
+		if 2*n+extra > len(b) {
+			return nil
+		}
+		out = append(out, variable{name: wide(b[:2*n])})
+		b = b[2*n+extra:]
+	}
+	for i := range out {
+		if len(b) < 2 {
+			break
+		}
+		n := int(le.Uint16(b))
+		b = b[2:]
+		if 2*n > len(b) {
+			break
+		}
+		out[i].value = wide(b[:2*n])
+		b = b[2*n:]
+	}
+	return out
 }
 
 // Noun names the parts of a Word document.
@@ -272,6 +316,18 @@ func (d *Doc) Limited() bool { return false }
 func (d *Doc) Read(ctx context.Context, index int) *unit.Result {
 	if index == d.Stored() {
 		part := stored.NewPart(ctx, index+1)
+		for _, v := range d.variables {
+			name, _ := clean.String([]byte(v.name), clean.Prose)
+			value, _ := clean.String([]byte(v.value), clean.Prose)
+			name = part.Lost.Name(name)
+			if name == "" {
+				continue
+			}
+			if !part.Add(gofastcore.Block{Kind: gofastcore.KindParagraph, Text: name + ": " + value,
+				Attrs: map[string]string{gofastcore.AttrStored: gofastcore.StoredDocumentVariable, gofastcore.AttrName: name}}) {
+				break
+			}
+		}
 		if d.cfg.Stored != nil {
 			d.cfg.Stored(ctx, part)
 		}

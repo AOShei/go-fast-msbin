@@ -215,3 +215,36 @@ func TestDamagedWordDocuments(tt *testing.T) {
 		streams[name] = good
 	}
 }
+
+// A document of Word 6 or 95: its text in the code page of its language,
+// as paragraphs, tables by their cell marks, footnotes and the results of
+// fields.
+func TestWord95(tt *testing.T) {
+	text := "\xcf\xf0\xe8\xe2\xe5\xf2, \xec\xe8\xf0.\x02\r" + // "Привет, мир." and a footnote
+		"a\x07b\x07\x07c\x07d\x07\x07" +
+		"Page \x13 PAGE \x14" + "7\x15 of \x13 NUMPAGES \x15" + "9.\r" +
+		"An open \x13 mark, and text after it.\r" +
+		"Last paragraph, with no mark"
+	stream := t.Word6Stream(0x0419, text, "\x02 \xd1\xed\xee\xf1\xea\xe0.")
+	doc := mustExtract(tt, t.Compound(map[string][]byte{"WordDocument": stream}), nil)
+	want := []string{
+		"paragraph Привет, мир.", "footnote[1] Сноска.",
+		"table a|b/c|d", "paragraph Page 7 of 9.", "paragraph An open mark, and text after it.", "paragraph Last paragraph, with no mark",
+	}
+	if got := lines(&doc.Parts[0]); !reflect.DeepEqual(got, want) {
+		tt.Errorf("%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if doc.Source.Format != "doc" {
+		tt.Errorf("%+v", doc.Source)
+	}
+	// Cut off at any byte, or with any byte changed: a valid document or
+	// a shared error.
+	for i := 0; i < len(stream); i += 3 {
+		bad := append([]byte(nil), stream...)
+		bad[i] ^= 0x5A
+		d, err := extract(t.Compound(map[string][]byte{"WordDocument": bad}), nil)
+		checkOutcome(tt, d, err)
+		d, err = extract(t.Compound(map[string][]byte{"WordDocument": stream[:i]}), nil)
+		checkOutcome(tt, d, err)
+	}
+}

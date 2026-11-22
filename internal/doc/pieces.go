@@ -41,8 +41,9 @@ const maxPieces = 1 << 22
 // readPieces reads the piece table out of the Clx ([MS-DOC] 2.9.38): a
 // run of property modifiers, each kept for the pieces that name it, and
 // then the table. size is the length of the WordDocument stream: a piece
-// that lies outside it is cut to what is inside.
-func readPieces(clx []byte, size int64) (pieces []piece, prcs [][]byte, damaged bool) {
+// that lies outside it is cut to what is inside. bytes says the document
+// is of Word 6 or 95, whose pieces are all one byte to a character.
+func readPieces(clx []byte, size int64, bytes bool) (pieces []piece, prcs [][]byte, damaged bool) {
 	for len(clx) > 0 {
 		switch clx[0] {
 		case 0x01: // property modifiers: a length and that many bytes
@@ -86,7 +87,10 @@ func readPieces(clx []byte, size int64) (pieces []piece, prcs [][]byte, damaged 
 			p := piece{cp: from, n: to - from, prm: le.Uint16(pcd[6:])}
 			// A piece of one-byte characters says so with a bit, and
 			// gives twice where it is.
-			if fc&0x40000000 != 0 {
+			if bytes {
+				// Word 6 and 95: the piece is bytes at the place it gives.
+				p.narrow, p.fc = true, int64(fc)
+			} else if fc&0x40000000 != 0 {
 				p.narrow, p.fc = true, int64(fc&0x3FFFFFFF)/2
 			} else {
 				p.fc = int64(fc & 0x3FFFFFFF)

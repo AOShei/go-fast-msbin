@@ -201,6 +201,15 @@ func (f *File) stream(name string) (unit.Stream, error) {
 // goes through the same steps as the first, so that it meets every limit
 // where the first did.
 func (f *File) reader() (*session, error) {
+	if f.word != nil && f.info.Version != detect.Word97 {
+		cfg := doc.Config{HasStored: len(f.projects) > 0,
+			Stored: func(ctx context.Context, part *stored.Part) { stored.Macros(ctx, f.cf, f.projects, part) }}
+		d, err := doc.Open6(f.word, &f.opts, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("gofastmsbin: the Word document cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
+		}
+		return &session{src: d}, nil
+	}
 	if f.word != nil {
 		data := func() []byte {
 			s, err := f.stream("Data")
@@ -242,7 +251,7 @@ func (f *File) reader() (*session, error) {
 // reads whole: a workbook's records. The stream is no larger than the
 // file, which Limits.MaxInputBytes bounds.
 func (f *File) load() error {
-	if f.info.Format == detect.Doc && f.info.Version == detect.Word97 {
+	if f.info.Format == detect.Doc {
 		s, err := f.stream("WordDocument")
 		if err != nil {
 			return fmt.Errorf("gofastmsbin: the document's stream cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)

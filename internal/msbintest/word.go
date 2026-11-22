@@ -282,3 +282,50 @@ func WordStreams(d DocFile) map[string][]byte {
 	copy(word, fib)
 	return map[string][]byte{"WordDocument": word, "1Table": table}
 }
+
+// Word6Stream returns the WordDocument stream of a document of Word 6 or
+// 95: a file information block of that version and the text, bytes in
+// the code page of the language lid. The text holds its own marks: 0x0D
+// ends a paragraph, 0x07 a cell, and a second 0x07 the row; 0x13, 0x14
+// and 0x15 are the marks of a field. footnotes are the texts of
+// footnotes referred to by the characters 0x02 of the text, in order.
+func Word6Stream(lid uint16, text string, footnotes ...string) []byte {
+	le := binary.LittleEndian
+	const at = 0x400
+	b := make([]byte, at)
+	le.PutUint16(b, 0xA5DC)
+	le.PutUint16(b[2:], 104)
+	le.PutUint16(b[6:], lid)
+	le.PutUint32(b[0x18:], at)
+	le.PutUint32(b[0x34:], uint32(len(text)))
+	body := []byte(text)
+	var refs, starts []uint32
+	for i := range body {
+		if body[i] == 0x02 {
+			refs = append(refs, uint32(i))
+		}
+	}
+	notes := 0
+	for _, f := range footnotes {
+		starts = append(starts, uint32(notes))
+		body = append(body, f...)
+		body = append(body, 0x0D)
+		notes += len(f) + 1
+	}
+	le.PutUint32(b[0x38:], uint32(notes))
+	b = append(b, body...)
+	if len(refs) > 0 {
+		ref := append(U32(refs...), U32(uint32(len(text)))...)
+		for range refs {
+			ref = append(ref, U16(1)...)
+		}
+		le.PutUint32(b[0x68:], uint32(len(b)))
+		le.PutUint32(b[0x6C:], uint32(len(ref)))
+		b = append(b, ref...)
+		txt := append(U32(starts...), U32(uint32(notes), uint32(notes+1))...)
+		le.PutUint32(b[0x70:], uint32(len(b)))
+		le.PutUint32(b[0x74:], uint32(len(txt)))
+		b = append(b, txt...)
+	}
+	return b
+}

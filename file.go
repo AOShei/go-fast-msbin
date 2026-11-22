@@ -16,6 +16,7 @@ import (
 	"github.com/AOShei/go-fast-msbin/internal/cfb"
 	"github.com/AOShei/go-fast-msbin/internal/clean"
 	"github.com/AOShei/go-fast-msbin/internal/detect"
+	"github.com/AOShei/go-fast-msbin/internal/doc"
 	"github.com/AOShei/go-fast-msbin/internal/embed"
 	"github.com/AOShei/go-fast-msbin/internal/stored"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
@@ -38,22 +39,24 @@ import (
 // over one pass: one call of Document, Part or Children, or one run
 // through Parts. Passes that run at the same time share it.
 type File struct {
-	e        Extractor
-	opts     gofastcore.Options
-	r        io.ReaderAt
-	size     int64
-	closer   io.Closer
-	cf       *cfb.File
-	info     detect.Info
-	source   gofastcore.Source
-	meta     gofastcore.Metadata
-	opened   []gofastcore.Warning // warnings about the document known when it was opened
-	projects [][]string           // the storages that hold a VBA project
-	objects  []embed.Object       // the embedded objects
-	book     []byte               // a workbook's stream of records
-	parts    int
-	stored   int // the index of the stored part, or -1
-	noun     string
+	e         Extractor
+	opts      gofastcore.Options
+	r         io.ReaderAt
+	size      int64
+	closer    io.Closer
+	cf        *cfb.File
+	info      detect.Info
+	source    gofastcore.Source
+	meta      gofastcore.Metadata
+	opened    []gofastcore.Warning // warnings about the document known when it was opened
+	projects  [][]string           // the storages that hold a VBA project
+	objects   []embed.Object       // the embedded objects
+	book      []byte               // a workbook's stream of records
+	word      []byte               // a Word document's main stream
+	wordTable []byte               // and its table stream
+	parts     int
+	stored    int // the index of the stored part, or -1
+	noun      string
 
 	mu      sync.Mutex
 	sess    *session            // the reading in use
@@ -198,6 +201,35 @@ func (f *File) stream(name string) (unit.Stream, error) {
 // goes through the same steps as the first, so that it meets every limit
 // where the first did.
 func (f *File) reader() (*session, error) {
+	if f.word != nil {
+		data := func() []byte {
+			s, err := f.stream("Data")
+			if err != nil {
+				return nil
+			}
+			b, _, _ := unit.ReadAll(s, s.Size())
+			return b
+		}
+		cfg := doc.Config{HasStored: len(f.projects) > 0, Data: data,
+			Stored: func(ctx context.Context, part *stored.Part) { stored.Macros(ctx, f.cf, f.projects, part) }}
+		// The table stream the document names, read once.
+		table := func(name string) []byte {
+			if f.wordTable == nil {
+				if s, err := f.stream(name); err == nil {
+					f.wordTable, _, _ = unit.ReadAll(s, s.Size())
+				}
+				if f.wordTable == nil {
+					f.wordTable = []byte{}
+				}
+			}
+			return f.wordTable
+		}
+		d, err := doc.OpenStreams(f.word, table, &f.opts, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("gofastmsbin: the Word document cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
+		}
+		return &session{src: d}, nil
+	}
 	if f.book != nil {
 		cfg := xls.Config{MaxCells: gofastcore.ResolveLimit(f.e.MaxCells, DefaultMaxCells), HasStored: len(f.projects) > 0,
 			Stored: func(ctx context.Context, part *stored.Part) { stored.Macros(ctx, f.cf, f.projects, part) }}
@@ -210,6 +242,22 @@ func (f *File) reader() (*session, error) {
 // reads whole: a workbook's records. The stream is no larger than the
 // file, which Limits.MaxInputBytes bounds.
 func (f *File) load() error {
+	if f.info.Format == detect.Doc && f.info.Version == detect.Word97 {
+		s, err := f.stream("WordDocument")
+		if err != nil {
+			return fmt.Errorf("gofastmsbin: the document's stream cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
+		}
+		data, _, err := unit.ReadAll(s, s.Size())
+		if err != nil && len(data) == 0 {
+			return fmt.Errorf("gofastmsbin: the document's stream cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
+		}
+		if err != nil {
+			f.opened = append(f.opened, gofastcore.Warning{Code: gofastcore.WarnInputRepaired, Severity: gofastcore.SeverityWarning,
+				Message: fmt.Sprintf("the document's stream breaks off after %d of %d bytes; what was read of it is used", len(data), s.Size())})
+		}
+		f.word = data
+		return nil
+	}
 	if f.info.Format != detect.Xls {
 		return nil
 	}

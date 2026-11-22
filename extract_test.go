@@ -62,7 +62,7 @@ func TestFilesAreToldApart(t *testing.T) {
 		want string
 		err  error
 	}{
-		"word 97":            {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0200), "1Table": {}}), "doc: Word 97-2003", nil},
+		"word 97":            {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0200), "1Table": {}}), "doc: the document's text cannot be found", nil},
 		"word 97, xor":       {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x8100)}), "Word 97-2003 file, encrypted (XOR obfuscation)", gofastcore.ErrUnsupported},
 		"word 97, rc4":       {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0300), "1Table": u16s(1, 1)}), "encrypted (RC4)", gofastcore.ErrUnsupported},
 		"word 97, cryptoapi": {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0100), "0Table": u16s(3, 2)}), "encrypted (RC4 CryptoAPI)", gofastcore.ErrUnsupported},

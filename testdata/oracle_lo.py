@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
-"""What LibreOffice makes of each .xls file of the corpus.
+"""What LibreOffice makes of each file of one format of the corpus.
 
     python3 testdata/oracle_lo.py testdata testdata/corpus/oracle-lo-xls
     python3 testdata/oracle_lo.py testdata testdata/corpus/twins-xls --twin
+    python3 testdata/oracle_lo.py testdata testdata/corpus/twins-doc --twin --format doc
+    python3 testdata/oracle_lo.py testdata testdata/corpus/oracle-lo-doc --text --format doc
+    python3 testdata/oracle_lo.py testdata testdata/corpus/twins-ppt --twin --format ppt
 
 Without --twin, every sheet is saved as CSV with the cells as shown, and
 <hash>.json.gz ({"sheets": {name: rows}}) is written for each file
 LibreOffice converts, with index.json; TestShownAgainstLibreOffice compares
 the library with them.
 
-With --twin, each file is saved as .xlsx, <hash>.xlsx: the same workbook in
-the newer format, which go-fast-ooxml reads. TestTwins compares what the
-two libraries make of the pair.
+With --twin, each file is saved in the newer format (<hash>.xlsx, .docx
+or .pptx), which go-fast-ooxml reads; TestTwins and its like compare what
+the two libraries make of the pair. With --text, a Word document is saved
+as plain text (<hash>.txt).
 
 LibreOffice is contained: a process group of its own that is killed as a
 group at the time limit, a limit on the size of any file it writes, a
@@ -39,15 +43,19 @@ def limits():
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_FILE, MAX_FILE))
 
 
-def convert(src, dest, twin=False):
+TWIN = {"xls": "xlsx", "doc": "docx", "ppt": "pptx"}
+
+
+def convert(src, dest, twin=False, fmt="xls", text=False):
     work = tempfile.mkdtemp(prefix="gofastmsbin-lo-")
     try:
         profile, out = os.path.join(work, "profile"), os.path.join(work, "out")
         os.mkdir(out)
-        copy = os.path.join(work, "f.xls")
+        copy = os.path.join(work, "f." + fmt)
         shutil.copyfile(src, copy)
         proc = subprocess.Popen(["soffice", "-env:UserInstallation=file://" + profile, "--headless", "--norestore",
-                                 "--convert-to", "xlsx" if twin else FILTER, "--outdir", out, copy],
+                                 "--convert-to", TWIN[fmt] if twin else ("txt:Text (encoded):UTF8" if text else FILTER),
+                                 "--outdir", out, copy],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, preexec_fn=limits)
         status = "ok"
         try:
@@ -62,8 +70,8 @@ def convert(src, dest, twin=False):
             proc.wait()
         if status != "ok":
             return {"error": status}
-        if twin:
-            made = os.path.join(out, "f.xlsx")
+        if twin or text:
+            made = os.path.join(out, "f." + (TWIN[fmt] if twin else "txt"))
             if not os.path.exists(made):
                 return {"error": "failed"}
             shutil.move(made, dest)
@@ -92,16 +100,18 @@ def convert(src, dest, twin=False):
 
 def main():
     testdata, dest = sys.argv[1], sys.argv[2]
-    twin = "--twin" in sys.argv[3:]
+    twin, text = "--twin" in sys.argv[3:], "--text" in sys.argv[3:]
+    fmt = sys.argv[sys.argv.index("--format") + 1] if "--format" in sys.argv else "xls"
     os.makedirs(dest, exist_ok=True)
-    entries = [e for e in json.load(open(os.path.join(testdata, "corpus.json"))) if e["format"] == "xls"]
+    entries = [e for e in json.load(open(os.path.join(testdata, "corpus.json"))) if e["format"] == fmt]
     index_path = os.path.join(dest, "index.json")
     index = json.load(open(index_path)) if os.path.exists(index_path) else {}
     todo = [e for e in entries if e["sha256"] not in index and os.path.exists(os.path.join(testdata, e["path"]))]
 
     def one(e):
         try:
-            return e["sha256"], convert(os.path.join(testdata, e["path"]), os.path.join(dest, e["sha256"] + (".xlsx" if twin else ".json.gz")), twin)
+            ext = "." + TWIN[fmt] if twin else (".txt" if text else ".json.gz")
+            return e["sha256"], convert(os.path.join(testdata, e["path"]), os.path.join(dest, e["sha256"] + ext), twin, fmt, text)
         except Exception as ex:
             return e["sha256"], {"error": type(ex).__name__}
 

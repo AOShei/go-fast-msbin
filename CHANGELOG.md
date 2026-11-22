@@ -41,3 +41,7 @@ and what each found.
   RC4 and RC4 CryptoAPI, for workbooks, Word documents and presentations.
   `ErrPasswordRequired` and `ErrWrongPassword`; Excel's own password is
   tried unasked; the warning `msbin.decrypted`.
+- Phase 8: `File.Sheets`; the command reads embedded Office Open XML files
+  with go-fast-ooxml (the library still imports the standard library and
+  go-fast-core only); the exported declarations are held to
+  `testdata/api.txt`; examples.

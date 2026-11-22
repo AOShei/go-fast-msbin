@@ -438,6 +438,36 @@ func (f *File) Metadata() gofastcore.Metadata { return f.meta }
 // with the whole document, not with a range of parts.
 func (f *File) NumParts() int { return f.parts }
 
+// Sheet is a sheet of a workbook as the workbook lists it.
+type Sheet struct {
+	// Number is the sheet's part number, from 1.
+	Number int
+	// Name is the sheet's name.
+	Name string
+	// Hidden says the workbook marks the sheet hidden.
+	Hidden bool
+}
+
+// Sheets lists the sheets of a workbook in order, without reading them.
+// It is empty for other formats.
+func (f *File) Sheets() []Sheet {
+	f.mu.Lock()
+	sess := f.sess
+	f.mu.Unlock()
+	if sess == nil {
+		return nil
+	}
+	book, ok := sess.src.(*xls.Book)
+	if !ok {
+		return nil
+	}
+	var out []Sheet
+	for i, sh := range book.Sheets() {
+		out = append(out, Sheet{Number: i + 1, Name: sh.Name, Hidden: sh.Hidden})
+	}
+	return out
+}
+
 // tree gives ctx the budgets a document and the files embedded in it
 // share: the text it may hold, and the bytes it may decode.
 func (f *File) tree(ctx context.Context) (_ context.Context, done func()) {

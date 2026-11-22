@@ -36,6 +36,8 @@ All of it is by the same author and under the same MIT License.
                               place of those of .xlsb; numbers written to
                               fifteen digits; functions kept by name
                               (_xlfn.) written as an .xlsx file writes them.
+  api_snapshot_test.go        from go-fast-ooxml (v0.1.1): the test that holds
+                              the exported declarations to testdata/api.txt.
   internal/chart              from go-fast-ooxml (v0.1.1): the table of a
                               chart's data and its blocks, from
                               internal/chart/chart.go.

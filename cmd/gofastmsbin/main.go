@@ -34,6 +34,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin"
+	"github.com/AOShei/go-fast-ooxml"
 )
 
 func main() {
@@ -122,10 +123,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		opts.Parts = gofastcore.PartRange{First: a, Last: b}
 	}
 	extractor := &gofastmsbin.Extractor{MaxCells: *maxCells}
-	// A file embedded in a document is read too if it is of these formats.
-	opts.Child = func(ctx context.Context, name, mime string, r io.ReaderAt, size int64, o *gofastcore.Options) (*gofastcore.Document, error) {
-		return extractor.Extract(ctx, r, size, o)
-	}
+	opts.Child = children(extractor)
 
 	// The inputs: the files named, and the Office files in the
 	// directories named.
@@ -304,4 +302,32 @@ func moduleVersion() string {
 		return info.Main.Version
 	}
 	return "(devel)"
+}
+
+// children reads the files embedded in a document: one of the binary
+// Office formats with this library, an Office Open XML file (.docx,
+// .xlsx, .pptx) with go-fast-ooxml. Which it is is decided from the
+// file's first bytes, never from its name. Anything else is listed and
+// not read.
+func children(extractor *gofastmsbin.Extractor) gofastcore.ChildFunc {
+	open := &gofastooxml.Extractor{}
+	return func(ctx context.Context, name, mime string, r io.ReaderAt, size int64, o *gofastcore.Options) (*gofastcore.Document, error) {
+		var head [8]byte
+		n, _ := r.ReadAt(head[:], 0)
+		switch {
+		case n >= 4 && string(head[:4]) == "PK\x03\x04":
+			return open.Extract(ctx, r, size, o)
+		case n == 8 && string(head[:]) == "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1":
+			// A compound file: one of these formats, or an encrypted
+			// Office Open XML package, which is a compound file too.
+			doc, err := extractor.Extract(ctx, r, size, o)
+			if errors.Is(err, gofastcore.ErrUnsupported) {
+				if other, err2 := open.Extract(ctx, r, size, o); err2 == nil || !errors.Is(err2, gofastcore.ErrUnsupported) {
+					return other, err2
+				}
+			}
+			return doc, err
+		}
+		return nil, fmt.Errorf("gofastmsbin: an embedded file that is neither a binary Office file nor an Office Open XML file: %w", gofastcore.ErrUnsupported)
+	}
 }

@@ -99,12 +99,47 @@ older and PowerPoint 95 and older are not read; neither is a file of
 another format under one of these names (RTF, HTML, a zip package). Each is
 refused with a message that says which it is.
 
+## Using it
+
+```go
+doc, err := gofastmsbin.ExtractFile(ctx, "report.doc", nil)          // a whole file
+
+f, err := gofastmsbin.Open("ledger.xls", &gofastcore.Options{Password: "sesame"})
+defer f.Close()
+for _, sheet := range f.Sheets() { ... }                             // listed without being read
+for part, err := range f.Parts(ctx) { ... }                          // a sheet or a slide at a time
+```
+
+`Extract` and `ExtractFile` give a `gofastcore.Document`. `Open` gives a
+`File`: its `Metadata`, its parts one at a time (`Parts`, `Part`) or as a
+`Document`, its embedded files (`Children`), and for a workbook its `Sheets`.
+`Extractor.MaxCells` bounds the cells kept from a workbook. The exported
+declarations are held to `testdata/api.txt` by a test.
+
+The command prints JSON (the document, a line for each file when there are
+several), Markdown or text:
+
+```sh
+go install github.com/AOShei/go-fast-msbin/cmd/gofastmsbin@latest
+gofastmsbin report.doc                    # JSON
+gofastmsbin -format markdown slides.ppt
+gofastmsbin -password sesame -cells ledger.xls
+gofastmsbin -quiet archive/               # every .doc, .xls and .ppt file below a directory
+```
+
+It reads the files embedded in a document too: those of the binary formats
+with this library, and Office Open XML files (`.docx`, `.xlsx`, `.pptx`) with
+[go-fast-ooxml](https://github.com/AOShei/go-fast-ooxml), told apart by their
+first bytes. The library itself imports the standard library and go-fast-core
+only; a program that uses it decides what reads embedded files, through
+`Options.Child`.
+
 ## Layout
 
 | Path | Content |
 |---|---|
 | `extract.go`, `file.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor`; `Open` and `File`, for a part at a time |
-| `cmd/gofastmsbin` | The command: JSON, Markdown or text for files and directories |
+| `cmd/gofastmsbin` | The command: JSON, Markdown or text for files and directories; embedded Office Open XML files read with go-fast-ooxml |
 | `internal/xls` | The Excel reader: records, shared strings, cell formats, sheets, formulas, lists, shapes, charts |
 | `internal/doc` | The Word reader: pieces, properties, styles, lists, tables, notes, fields, text boxes, pictures; Word 6/95 |
 | `internal/ppt` | The PowerPoint reader: edits and the persist directory, masters and their text styles, slides, shapes, text, notes, comments |

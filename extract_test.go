@@ -68,7 +68,7 @@ func TestFilesAreToldApart(t *testing.T) {
 		"word 97, cryptoapi": {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0100), "0Table": u16s(3, 2)}), "encrypted (RC4 CryptoAPI)", gofastcore.ErrUnsupported},
 		"word 95":            {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5DC, 104, 0)}), "doc: Word 6/95", nil},
 		"excel 97":           {msbintest.Compound(map[string][]byte{"Workbook": bof8}), "xls: the workbook lists no sheets", nil},
-		"excel 95":           {msbintest.Compound(map[string][]byte{"Book": bof5}), "xls: Excel 5/95 (BIFF5)", nil},
+		"excel 95":           {msbintest.Compound(map[string][]byte{"Book": bof5}), "xls: the workbook lists no sheets", nil},
 		"excel both":         {msbintest.Compound(map[string][]byte{"Book": bof5, "Workbook": bof8}), "xls: the workbook lists no sheets", nil},
 		"excel 97, xor":      {msbintest.Compound(map[string][]byte{"Workbook": append(bof8, record(0x002F, u16s(0, 1, 2)...)...)}), "encrypted (XOR obfuscation)", gofastcore.ErrUnsupported},
 		"excel 97, rc4":      {msbintest.Compound(map[string][]byte{"Workbook": append(bof8, record(0x002F, u16s(1, 1, 1)...)...)}), "encrypted (RC4)", gofastcore.ErrUnsupported},

@@ -258,7 +258,9 @@ func TestSheetsAndWhatTheyDeclare(tt *testing.T) {
 	for _, p := range doc.Parts {
 		names = append(names, p.Name)
 	}
-	if got := strings.Join(names, ","); got != "Shown,Hidden,Very hidden,Chart,Macros,Dialog,Empty" {
+	// The last part is the stored part, which a workbook with a macro
+	// sheet has.
+	if got := strings.Join(names, ","); got != "Shown,Hidden,Very hidden,Chart,Macros,Dialog,Empty," || doc.Parts[7].Kind != gofastcore.PartStored {
 		tt.Fatalf("parts: %s", got)
 	}
 	// The first sheet: a table, with the hidden row, the hidden column and
@@ -285,12 +287,12 @@ func TestSheetsAndWhatTheyDeclare(tt *testing.T) {
 	if b := doc.Parts[1].Blocks[0]; b.Display != gofastcore.DisplayHidden {
 		tt.Errorf("the blocks of a hidden sheet: %v", b.Display)
 	}
-	// What is not read is said: a chart sheet, a dialog sheet. A macro
-	// sheet's cells are read, and it is active content.
+	// What is not read is said: a dialog sheet. A macro sheet's cells are
+	// read, and it is active content.
 	if len(doc.Parts[3].Blocks) != 0 || len(doc.Parts[5].Blocks) != 0 || len(doc.Parts[4].Blocks) != 1 {
 		tt.Errorf("chart %d, macros %d, dialog %d blocks", len(doc.Parts[3].Blocks), len(doc.Parts[4].Blocks), len(doc.Parts[5].Blocks))
 	}
-	if w, ok := warning(doc.Warnings, gofastmsbin.WarnUnreadContent); !ok || w.Message != "1 chart sheet, 1 dialog sheet" {
+	if w, ok := warning(doc.Warnings, gofastmsbin.WarnUnreadContent); !ok || w.Message != "1 dialog sheet" {
 		tt.Errorf("%+v", doc.Warnings)
 	}
 	if w, ok := warning(doc.Warnings, gofastcore.WarnInputActiveContent); !ok || !strings.Contains(w.Message, "macro sheets") {
@@ -499,5 +501,56 @@ func TestWorkbookWithMacros(tt *testing.T) {
 	doc := mustExtract(tt, t.Compound(streams), nil)
 	if len(doc.Parts) != 3 || doc.Parts[2].Kind != gofastcore.PartStored || doc.Parts[2].Number != 3 || doc.Parts[2].Blocks[0].Kind != gofastcore.KindCode {
 		tt.Fatalf("%d parts", len(doc.Parts))
+	}
+}
+
+// A workbook of Excel 5 or 95 keeps its strings as bytes in a code page.
+func TestExcel95(tt *testing.T) {
+	globals := [][]byte{t.CodePage(1251), t.Font5("Arial"), t.Format5(164, "0.0"), t.XF5(0, 0), t.XF5(0, 164), t.XF5(0, 14)}
+	sheet := [][]byte{
+		t.Label5(0, 0, 0, "\xcf\xf0\xe8\xe2\xe5\xf2"), t.Label5(0, 1, 0, "plain"), t.Number(0, 2, 1, 2.25), t.Number(0, 3, 2, 36526),
+		t.RKInt(1, 0, 0, 7, false), t.Bool(1, 1, 0, true),
+		t.Formula5String(1, 2, 0, "\xe4\xe0", t.Cat(t.PtgRef5(0, 0, true, true), t.PtgStr5("\xe4\xe0"), t.PtgOp(0x08))),
+		t.FormulaTokens(1, 3, 0, 9, t.Cat(t.PtgArea5(0, 1, 0, 0), t.PtgAttrSum(), t.PtgRef3d5(1, 1, 4, 2), t.PtgOp(0x03))),
+		t.Note5(0, 0, "a note \xe8"), t.Row(1, true),
+	}
+	data := t.Compound(map[string][]byte{"Book": t.Workbook5(globals, t.Sheet{Name: "\xcb\xe8\xf1\xf2", Records: sheet}, t.Sheet{Name: "Two", State: 1})})
+	doc := mustExtract(tt, data, &gofastcore.Options{Cells: true})
+	if doc.Source.Format != "xls" || len(doc.Parts) != 2 || doc.Parts[0].Name != "Лист" || doc.Parts[1].Display != gofastcore.DisplayHidden {
+		tt.Fatalf("%+v", doc.Parts)
+	}
+	want := [][]string{{"Привет", "plain", "2.3", "2000-01-01"}, {"7", "TRUE", "да", "9"}}
+	if got := rows(tt, &doc.Parts[0]); !reflect.DeepEqual(got, want) {
+		tt.Errorf("cells: %q", got)
+	}
+	if got := formulas(&doc.Parts[0]); got["C2"] != `A1&"да"` || got["D2"] != "SUM($A$1:$A$2)+Two!$C$5" {
+		tt.Errorf("formulas: %v", got)
+	}
+	blocks := doc.Parts[0].Blocks
+	if n := blocks[len(blocks)-1]; n.Kind != gofastcore.KindNote || n.Text != "a note и" || n.Loc.Range != "A1" {
+		tt.Errorf("the note: %+v", n)
+	}
+	if d := blocks[0].Table.Display; len(d) != 1 || d[0].Row != 1 {
+		tt.Errorf("the hidden row: %+v", d)
+	}
+}
+
+// A pivot table's cells are a table of their own, with its name.
+func TestPivotTable(tt *testing.T) {
+	var recs [][]byte
+	for r := uint16(0); r < 6; r++ {
+		recs = append(recs, t.MulRK(r, 0, xfGeneral, int32(r), int32(r)+1, int32(r)+2, int32(r)+3))
+	}
+	recs = append(recs, t.SxView([4]uint16{2, 4, 1, 2}, 3, "PivotTable1"))
+	doc := mustExtract(tt, book(nil, t.Sheet{Name: "S", Records: recs}), nil)
+	var pivot *gofastcore.Block
+	for i, b := range doc.Parts[0].Blocks {
+		if b.Attrs[gofastcore.AttrRole] == gofastcore.RolePivot {
+			pivot = &doc.Parts[0].Blocks[i]
+		}
+	}
+	if pivot == nil || pivot.Loc.Range != "B3:C5" || pivot.Attrs[gofastcore.AttrName] != "PivotTable1" || pivot.Table.HeaderRows != 1 ||
+		pivot.Origin != gofastcore.OriginNative || !reflect.DeepEqual(pivot.Table.Rows, [][]string{{"3", "4"}, {"4", "5"}, {"5", "6"}}) {
+		tt.Errorf("%+v", pivot)
 	}
 }

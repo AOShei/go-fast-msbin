@@ -56,7 +56,8 @@ func cellsOf(t testing.TB, part *gofastcore.Part) map[[2]int]shownCell {
 	out := map[[2]int]shownCell{}
 	for i := range part.Blocks {
 		b := &part.Blocks[i]
-		if b.Kind != gofastcore.KindTable || b.Table == nil {
+		// The table of a chart's data is not cells of the sheet.
+		if b.Kind != gofastcore.KindTable || b.Table == nil || b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart {
 			continue
 		}
 		r0, c0, ok := topLeft(b.Loc.Range)
@@ -123,7 +124,7 @@ func TestCellsAgainstXlrd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var files, same, differ, missing, extra, sheetsDiffer, symbols int
+	var files, older, same, differ, missing, extra, sheetsDiffer, symbols int
 	shown := 0
 	note := func(e msbintest.Entry, format string, args ...any) {
 		if !e.HeldOut() && shown < 60 {
@@ -149,9 +150,10 @@ func TestCellsAgainstXlrd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if book.BIFF != 80 {
-			continue
+		if book.BIFF != 80 && book.BIFF != 70 && book.BIFF != 50 {
+			continue // a workbook of Excel 4 or older
 		}
+		old := book.BIFF != 80
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		doc, err := gofastmsbin.ExtractFile(ctx, e.Path, &gofastcore.Options{Cells: true})
 		cancel()
@@ -159,6 +161,9 @@ func TestCellsAgainstXlrd(t *testing.T) {
 			continue
 		}
 		files++
+		if old {
+			older++
+		}
 		// xlrd lists the worksheets; chart sheets and macro sheets are
 		// parts here and not sheets there. They are matched by name, in
 		// order.
@@ -261,8 +266,8 @@ func TestCellsAgainstXlrd(t *testing.T) {
 		}
 	}
 	total := same + differ + missing
-	t.Logf("%d workbooks: %d cells agree with xlrd, %d differ, %d are missing here, %d are here and not in xlrd; %d more are text in a symbol font; %d workbooks differ in their sheets",
-		files, same, differ, missing, extra, symbols, sheetsDiffer)
+	t.Logf("%d workbooks, %d of them of Excel 5 or 95: %d cells agree with xlrd, %d differ, %d are missing here, %d are here and not in xlrd; %d more are text in a symbol font; %d workbooks differ in their sheets",
+		files, older, same, differ, missing, extra, symbols, sheetsDiffer)
 	if total > 0 && float64(same)/float64(total) < 0.995 {
 		t.Errorf("%d of %d cells agree with xlrd", same, total)
 	}

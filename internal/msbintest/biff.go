@@ -3,6 +3,7 @@ package msbintest
 import (
 	"encoding/binary"
 	"math"
+	"strings"
 	"unicode/utf16"
 )
 
@@ -379,4 +380,264 @@ func Workbook(globals [][]byte, sheets ...Sheet) []byte {
 // BookFile returns a compound file holding the workbook stream.
 func BookFile(stream []byte) []byte {
 	return Compound(map[string][]byte{"Workbook": stream})
+}
+
+// Tokens of compiled formulas ([MS-XLS] 2.5.198), for FormulaTokens and
+// the records that hold formulas. A reference's flags say which of its
+// row and column are relative.
+
+func PtgInt(v uint16) []byte { return append([]byte{0x1E}, U16(v)...) }
+
+func PtgNum(v float64) []byte { return append([]byte{0x1F}, F64(v)...) }
+
+func PtgStr(s string) []byte { return append([]byte{0x17}, ShortStr(s)...) }
+
+func PtgBool(v bool) []byte {
+	if v {
+		return []byte{0x1D, 1}
+	}
+	return []byte{0x1D, 0}
+}
+
+// PtgOp is an operator: 0x03 add, 0x04 subtract, 0x05 multiply, 0x06
+// divide, 0x08 concatenate, 0x15 parentheses and so on.
+func PtgOp(code byte) []byte { return []byte{code} }
+
+func colFlags(col uint16, rowRel, colRel bool) uint16 {
+	if rowRel {
+		col |= 0x8000
+	}
+	if colRel {
+		col |= 0x4000
+	}
+	return col
+}
+
+// PtgRef is a reference to a cell.
+func PtgRef(row, col uint16, rowRel, colRel bool) []byte {
+	return append([]byte{0x44}, U16(row, colFlags(col, rowRel, colRel))...)
+}
+
+// PtgArea is a reference to a range, both corners absolute.
+func PtgArea(r0, r1, c0, c1 uint16) []byte {
+	return append([]byte{0x25}, U16(r0, r1, c0, c1)...)
+}
+
+// PtgRefN is a reference of a shared formula or a name: its relative
+// parts are offsets from the cell that uses it.
+func PtgRefN(row int16, col int8, rowRel, colRel bool) []byte {
+	return append([]byte{0x4C}, U16(uint16(row), colFlags(uint16(uint8(col)), rowRel, colRel))...)
+}
+
+// PtgRef3d is a reference to a cell of the sheets an entry of the
+// ExternSheet record names.
+func PtgRef3d(xti, row, col uint16) []byte {
+	return append([]byte{0x5A}, U16(xti, row, col)...)
+}
+
+// PtgArea3d is a reference to a range of such sheets.
+func PtgArea3d(xti, r0, r1, c0, c1 uint16) []byte {
+	return append([]byte{0x3B}, U16(xti, r0, r1, c0, c1)...)
+}
+
+// PtgName is a defined name, by its number from 1.
+func PtgName(index uint32) []byte { return append([]byte{0x43}, U32(index)...) }
+
+// PtgNameX is a name taken through a link.
+func PtgNameX(xti uint16, index uint32) []byte {
+	return Cat([]byte{0x59}, U16(xti), U32(index))
+}
+
+// PtgFunc is a function with a fixed number of arguments, by its number.
+func PtgFunc(id uint16) []byte { return append([]byte{0x41}, U16(id)...) }
+
+// PtgFuncVar is a function called with n arguments.
+func PtgFuncVar(n byte, id uint16) []byte { return Cat([]byte{0x42, n}, U16(id)) }
+
+// PtgAttrSum is SUM with one argument.
+func PtgAttrSum() []byte { return []byte{0x19, 0x10, 0, 0} }
+
+// PtgExp refers to the shared or array formula whose range begins at row
+// and col.
+func PtgExp(row, col uint16) []byte { return append([]byte{0x01}, U16(row, col)...) }
+
+// PtgArray is an array constant; its values follow the tokens.
+func PtgArray() []byte { return append([]byte{0x60}, make([]byte, 7)...) }
+
+// FormulaTokens is a formula with the given tokens and the data after
+// them, whose result is a number.
+func FormulaTokens(row, col, xf uint16, result float64, rgce []byte, extra ...byte) []byte {
+	return Rec(0x0006, Cat(U16(row, col, xf), F64(result), U16(0), U32(0), U16(uint16(len(rgce))), rgce, extra)...)
+}
+
+// FormulaTokensString is such a formula whose result is text.
+func FormulaTokensString(row, col, xf uint16, text string, rgce []byte, between ...[]byte) []byte {
+	head := Rec(0x0006, Cat(U16(row, col, xf), []byte{0, 0, 0, 0, 0, 0, 0xFF, 0xFF}, U16(0), U32(0), U16(uint16(len(rgce))), rgce)...)
+	return Cat(head, Cat(between...), Rec(0x0207, Str(text)...))
+}
+
+// ShrFmla is the formula the cells of a range share.
+func ShrFmla(r0, r1 uint16, c0, c1 byte, rgce []byte) []byte {
+	return Rec(0x04BC, Cat(U16(r0, r1), []byte{c0, c1, 0, 0}, U16(uint16(len(rgce))), rgce)...)
+}
+
+// ArrayFormula is the formula of a range of cells that give its results
+// together.
+func ArrayFormula(r0, r1 uint16, c0, c1 byte, rgce []byte, extra ...byte) []byte {
+	return Rec(0x0221, Cat(U16(r0, r1), []byte{c0, c1}, U16(0), U32(0), U16(uint16(len(rgce))), rgce, extra)...)
+}
+
+// SupBookSelf is the link that stands for the workbook itself.
+func SupBookSelf(sheets uint16) []byte { return Rec(0x01AE, U16(sheets, 0x0401)...) }
+
+// SupBookAddin is the link that stands for the add-ins.
+func SupBookAddin() []byte { return Rec(0x01AE, U16(1, 0x3A01)...) }
+
+// SupBookFile is a link to another file and its sheets.
+func SupBookFile(path string, sheets ...string) []byte {
+	body := Cat(U16(uint16(len(sheets))), Str(path))
+	for _, s := range sheets {
+		body = append(body, Str(s)...)
+	}
+	return Rec(0x01AE, body...)
+}
+
+// ExternName is a name the formulas take through the link before it;
+// sheet is the sheet of that file it is local to, from 1, or 0.
+func ExternName(name string, sheet uint16) []byte {
+	return Rec(0x0023, Cat(U16(0, sheet, 0), ShortStr(name), U16(0))...)
+}
+
+// ExternSheet is the table of sheet references: for each, a link by its
+// number and the first and last of its sheets.
+func ExternSheet(refs ...[3]uint16) []byte {
+	body := U16(uint16(len(refs)))
+	for _, r := range refs {
+		body = append(body, U16(r[0], r[1], r[2])...)
+	}
+	return Rec(0x0017, body...)
+}
+
+// Name is a defined name: local to the sheet with the number sheet, from
+// 1, or the workbook's if sheet is 0. builtin is the number of one of
+// Excel's own names, or negative.
+func Name(name string, sheet uint16, builtin int, rgce []byte, extra ...byte) []byte {
+	flags := uint16(0)
+	_, chars := chars(name)
+	count := len([]rune(name))
+	if builtin >= 0 {
+		flags, chars, count = 0x0020, []byte{0, byte(builtin)}, 1
+	}
+	return Rec(0x0018, Cat(U16(flags), []byte{0, byte(count)}, U16(uint16(len(rgce)), 0, sheet), make([]byte, 4), chars, rgce, extra)...)
+}
+
+// DVList is a drop-down list for the cells of the ranges (a data
+// validation of type list): its values written out, or, if values is
+// nil, the formula they come from. hideArrow hides the arrow.
+func DVList(ranges [][4]uint16, values []string, formula []byte, hideArrow bool) []byte {
+	flags := uint32(3) | 0x100
+	if values != nil {
+		flags |= 0x80
+		n, body := chars(strings.Join(values, "\x00"))
+		formula = Cat([]byte{0x17, byte(n)}, body)
+	}
+	if hideArrow {
+		flags |= 0x200
+	}
+	empty := Cat(U16(1), []byte{0, 0})
+	body := Cat(U32(flags), empty, empty, empty, empty, U16(uint16(len(formula)), 0), formula, U16(0, 0), U16(uint16(len(ranges))))
+	for _, r := range ranges {
+		body = append(body, U16(r[0], r[1], r[2], r[3])...)
+	}
+	return Rec(0x01BE, body...)
+}
+
+// SxView is a pivot table: the cells it fills (first and last row, first
+// and last column), the first row of its values, and its name.
+func SxView(rng [4]uint16, firstData uint16, name string) []byte {
+	n, chars := chars(name)
+	return Rec(0x00B0, Cat(U16(rng[0], rng[1], rng[2], rng[3], rng[0], firstData, rng[2], 0), make([]byte, 24), U16(uint16(n), 0), chars)...)
+}
+
+// Records of a workbook of Excel 5 or 95, whose strings are bytes in the
+// workbook's code page with no flags before them.
+
+// BOF5 begins a substream of such a workbook.
+func BOF5(kind uint16) []byte { return Rec(0x0809, U16(0x0500, kind, 0x096C, 0x07C9)...) }
+
+// CodePage says which code page the workbook's strings are in.
+func CodePage(cp uint16) []byte { return Rec(0x0042, U16(cp)...) }
+
+func Font5(name string) []byte {
+	return Rec(0x0031, Cat(U16(200, 0, 0x7FFF, 400, 0), []byte{0, 0, 0, 0, byte(len(name))}, []byte(name))...)
+}
+
+func Format5(id uint16, code string) []byte {
+	return Rec(0x041E, Cat(U16(id), []byte{byte(len(code))}, []byte(code))...)
+}
+
+func XF5(font, format uint16) []byte {
+	return Rec(0x00E0, Cat(U16(font, format, 0x0001, 0x0020), make([]byte, 8))...)
+}
+
+func Label5(row, col, xf uint16, text string) []byte {
+	return Rec(0x0204, Cat(U16(row, col, xf, uint16(len(text))), []byte(text))...)
+}
+
+// Note5 is a comment on a cell.
+func Note5(row, col uint16, text string) []byte {
+	return Rec(0x001C, Cat(U16(row, col, uint16(len(text))), []byte(text))...)
+}
+
+// Formula5String is a formula whose result is text, with tokens in the
+// layout of this version.
+func Formula5String(row, col, xf uint16, text string, rgce []byte) []byte {
+	head := Rec(0x0006, Cat(U16(row, col, xf), []byte{0, 0, 0, 0, 0, 0, 0xFF, 0xFF}, U16(0), U32(0), U16(uint16(len(rgce))), rgce)...)
+	return Cat(head, Rec(0x0207, Cat(U16(uint16(len(text))), []byte(text))...))
+}
+
+// PtgRef5 and PtgArea5 are references in the layout of this version: the
+// row in 14 bits with the flags above it, the column in a byte.
+func PtgRef5(row uint16, col byte, rowRel, colRel bool) []byte {
+	if rowRel {
+		row |= 0x8000
+	}
+	if colRel {
+		row |= 0x4000
+	}
+	return Cat([]byte{0x44}, U16(row), []byte{col})
+}
+
+func PtgArea5(r0, r1 uint16, c0, c1 byte) []byte {
+	return Cat([]byte{0x25}, U16(r0, r1), []byte{c0, c1})
+}
+
+// PtgStr5 is a string in the workbook's code page.
+func PtgStr5(s string) []byte { return Cat([]byte{0x17, byte(len(s))}, []byte(s)) }
+
+// PtgRef3d5 is a reference to a cell of sheets of this workbook, by
+// their places in it.
+func PtgRef3d5(first, last, row uint16, col byte) []byte {
+	return Cat([]byte{0x5A}, U16(0xFFFF), make([]byte, 8), U16(first, last, row), []byte{col})
+}
+
+// Workbook5 returns a workbook stream of Excel 5 or 95.
+func Workbook5(globals [][]byte, sheets ...Sheet) []byte {
+	head := Cat(BOF5(0x0005), Cat(globals...))
+	size := len(head) + len(EOF())
+	for _, s := range sheets {
+		size += 4 + 7 + len(s.Name)
+	}
+	var bodies [][]byte
+	for _, s := range sheets {
+		bodies = append(bodies, Cat(BOF5(0x0010), Cat(s.Records...), EOF()))
+	}
+	out := head
+	at := size
+	for i, s := range sheets {
+		out = append(out, Rec(0x0085, Cat(U32(uint32(at)), []byte{s.State, s.Kind, byte(len(s.Name))}, []byte(s.Name))...)...)
+		at += len(bodies[i])
+	}
+	out = append(out, EOF()...)
+	return append(out, Cat(bodies...)...)
 }

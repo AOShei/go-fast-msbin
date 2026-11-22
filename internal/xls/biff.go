@@ -5,44 +5,54 @@ package xls
 import (
 	"encoding/binary"
 	"unicode/utf8"
+
+	"github.com/AOShei/go-fast-msbin/internal/codepage"
 )
 
 // Record types that are read ([MS-XLS] 2.3).
 const (
-	recFormula    = 0x0006
-	recFormula3   = 0x0206 // as Excel 3 and 4 numbered the record; some
-	recFormula4   = 0x0406 // programs write it so in a later file
-	recEOF        = 0x000A
-	recNote       = 0x001C
-	recDateMode   = 0x0022
-	recFont       = 0x0031
-	recContinue   = 0x003C
-	recCodePage   = 0x0042
-	recObj        = 0x005D
-	recColInfo    = 0x007D
-	recWsBool     = 0x0081
-	recBoundSheet = 0x0085
-	recMulRK      = 0x00BD
-	recMulBlank   = 0x00BE
-	recRString    = 0x00D6
-	recXF         = 0x00E0
-	recMergeCells = 0x00E5
-	recSST        = 0x00FC
-	recLabelSST   = 0x00FD
-	recTxo        = 0x01B6
-	recHLink      = 0x01B8
-	recDimensions = 0x0200
-	recNumber     = 0x0203
-	recLabel      = 0x0204
-	recBoolErr    = 0x0205
-	recString     = 0x0207
-	recRow        = 0x0208
-	recArray      = 0x0221
-	recTable      = 0x0236
-	recRK         = 0x027E
-	recFormat     = 0x041E
-	recShrFmla    = 0x04BC
-	recBOF        = 0x0809
+	recFormula         = 0x0006
+	recFormula3        = 0x0206 // as Excel 3 and 4 numbered the record; some
+	recFormula4        = 0x0406 // programs write it so in a later file
+	recEOF             = 0x000A
+	recExternSheet     = 0x0017
+	recName            = 0x0018
+	recNote            = 0x001C
+	recDateMode        = 0x0022
+	recExternName      = 0x0023
+	recFont            = 0x0031
+	recContinue        = 0x003C
+	recCodePage        = 0x0042
+	recObj             = 0x005D
+	recColInfo         = 0x007D
+	recWsBool          = 0x0081
+	recBoundSheet      = 0x0085
+	recMsoDrawingGroup = 0x00EB
+	recMsoDrawing      = 0x00EC
+	recSxView          = 0x00B0
+	recMulRK           = 0x00BD
+	recMulBlank        = 0x00BE
+	recRString         = 0x00D6
+	recXF              = 0x00E0
+	recMergeCells      = 0x00E5
+	recSST             = 0x00FC
+	recLabelSST        = 0x00FD
+	recSupBook         = 0x01AE
+	recTxo             = 0x01B6
+	recHLink           = 0x01B8
+	recDV              = 0x01BE
+	recDimensions      = 0x0200
+	recNumber          = 0x0203
+	recLabel           = 0x0204
+	recBoolErr         = 0x0205
+	recString          = 0x0207
+	recRow             = 0x0208
+	recArray           = 0x0221
+	recTable           = 0x0236
+	recRK              = 0x027E
+	recFormat          = 0x041E
+	recShrFmla         = 0x04BC
+	recBOF             = 0x0809
 )
 
 var le = binary.LittleEndian
@@ -59,6 +69,36 @@ type cursor struct {
 	// are then in runs after each.
 	keepRuns bool
 	runs     []run
+
+	// cp is the code page of the strings of a workbook of Excel 5 or 95,
+	// which are bytes with no flags before them; zero for a workbook of
+	// Excel 97 and later. undecoded counts the characters the page does
+	// not define.
+	cp        int
+	undecoded int
+	tmp       []byte
+}
+
+// bytes reads a string of cch bytes in the cursor's code page.
+func (c *cursor) bytes(dst []byte, cch int) ([]byte, bool) {
+	c.tmp = c.tmp[:0]
+	ok := true
+	for cch > 0 {
+		if len(c.b) == 0 {
+			if !c.cont() || len(c.b) == 0 {
+				ok = false
+				break
+			}
+			continue
+		}
+		n := min(cch, len(c.b))
+		c.tmp = append(c.tmp, c.b[:n]...)
+		c.b = c.b[n:]
+		cch -= n
+	}
+	text, undecoded := codepage.Decode(c.cp, c.tmp)
+	c.undecoded += undecoded
+	return append(dst, text...), ok
 }
 
 // record puts the cursor on the record at offset at, and returns its
@@ -188,6 +228,15 @@ func (c *cursor) chars(dst []byte, cch int, wide bool) (out []byte, ok bool) {
 // [MS-XLS] 2.5.294): the count of characters, a byte of flags, the
 // characters.
 func (c *cursor) str(dst []byte) ([]byte, bool) {
+	c.runs = c.runs[:0]
+	if c.cp != 0 {
+		if len(c.b) < 2 {
+			return dst, false
+		}
+		cch := int(le.Uint16(c.b))
+		c.b = c.b[2:]
+		return c.bytes(dst, cch)
+	}
 	if len(c.b) < 3 {
 		return dst, len(c.b) == 2 && le.Uint16(c.b) == 0
 	}
@@ -199,6 +248,15 @@ func (c *cursor) str(dst []byte) ([]byte, bool) {
 // short reads a string whose length is in 8 bits (ShortXLUnicodeString,
 // [MS-XLS] 2.5.240).
 func (c *cursor) shortStr(dst []byte) ([]byte, bool) {
+	c.runs = c.runs[:0]
+	if c.cp != 0 {
+		if len(c.b) < 1 {
+			return dst, false
+		}
+		cch := int(c.b[0])
+		c.b = c.b[1:]
+		return c.bytes(dst, cch)
+	}
 	if len(c.b) < 2 {
 		return dst, false
 	}

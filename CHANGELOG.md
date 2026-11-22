@@ -19,3 +19,6 @@ and what each found.
   formats; tables found as go-fast-ooxml finds them; merged cells, comments,
   hyperlinks, hidden sheets, rows and columns; cell types and stored values
   with `Options.Cells`; sheets read in parallel; `Extractor.MaxCells`.
+- Phase 3: the rest of Excel. Formulas as text, defined names, macro sheets,
+  links to other workbooks, drop-down lists, text boxes, pictures, charts,
+  pivot tables, and workbooks of Excel 5 and 95. The command has `-cells`.

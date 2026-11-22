@@ -80,25 +80,33 @@ type sheet struct {
 
 	// The row being read: the cells of a row are charged to the budgets
 	// together.
-	rowAt     int32
-	rowFirst  int   // the index of its first cell
-	rowBytes  int64 // the text of its cells
-	pending   int64 // text of the cells read and not yet in tables
-	last      pos   // the place of the last cell kept
-	removed   int   // control characters taken out
-	unmapped  int   // codes of symbol fonts with no character
-	isDate    bool  // the value just formatted was shown as a date
-	unread    map[string]int
-	macros    bool // the sheet is a sheet of macros
-	cutOff    bool // the records break off before their end
-	notSheet  bool // the workbook lists the sheet and does not hold it
-	cancelled bool
+	rowAt          int32
+	rowFirst       int   // the index of its first cell
+	rowBytes       int64 // the text of its cells
+	pending        int64 // text of the cells read and not yet in tables
+	last           pos   // the place of the last cell kept
+	removed        int   // control characters taken out
+	unmapped       int   // codes of symbol fonts with no character
+	isDate         bool  // the value just formatted was shown as a date
+	unread         map[string]int
+	unreadFormulas int  // formulas that could not be read back
+	macros         bool // the sheet is a sheet of macros
+	cutOff         bool // the records break off before their end
+	notSheet       bool // the workbook lists the sheet and does not hold it
+	cancelled      bool
 
 	// A formula whose result is a string: the string follows in a record
 	// of its own.
-	strAt    pos
-	strStyle *cellStyle
-	strWait  bool
+	strAt      pos
+	strStyle   *cellStyle
+	strWait    bool
+	strFormula string
+
+	// The formula of the cell being read, with Options.Cells, and the
+	// shared formulas of the sheet (cellformula.go).
+	formula string
+	shared  map[pos]sharedFormula
+	waiting *detailRef // the cell whose formula is the shared one that follows
 
 	details         []detail
 	detailsUnsorted bool
@@ -107,6 +115,27 @@ type sheet struct {
 
 	// Comments: the notes, and the text of the drawing objects they
 	// name.
+	// What floats over the sheet (drawing.go, chart.go).
+	shape      shape
+	floating   []grid.Placed
+	shapesFull bool  // there is no room for more of it
+	charts     int   // the charts read
+	lookedUp   int64 // bytes of sheets read over again for their data
+
+	// A reading for the cells of some ranges only (chart.go).
+	only     []grid.Rect
+	found    map[pos]string
+	index    int  // the sheet's place among the BoundSheet records
+	sawImage bool // the sheet has pictures that were not asked for
+	budget   bool // the limit on decoded bytes was reached
+
+	// The pivot tables the sheet declares.
+	declared []grid.Declared
+
+	// Drop-down lists (validation.go).
+	lists      []choiceList
+	listRanges int // the ranges of all of them
+
 	notes    []comment
 	noteText map[uint16]string
 	objID    uint16
@@ -161,8 +190,8 @@ func errorText(code byte) string {
 // sheet reads the sheet with the given index.
 func (b *Book) sheet(ctx context.Context, index int) *sheet {
 	ref := b.refs[index]
-	sh := &sheet{b: b, ctx: ctx, unread: map[string]int{}, rowAt: -1, last: pos{-1, -1}}
-	sh.c.data = b.data
+	sh := &sheet{b: b, ctx: ctx, unread: map[string]int{}, rowAt: -1, last: pos{-1, -1}, index: ref.place}
+	sh.c.data, sh.c.cp = b.data, b.cp
 	sh.room = gofastcore.TextBudgetFrom(ctx)
 	sh.g.Room = sh.room
 	part := &sh.part
@@ -172,8 +201,14 @@ func (b *Book) sheet(ctx context.Context, index int) *sheet {
 	}
 	switch ref.kind {
 	case dtChart:
-		// A sheet that is a chart.
-		sh.unread["chart sheet"]++
+		// A sheet that is a chart: its blocks have no place on a sheet
+		// of cells.
+		if typ, ok := sh.c.record(ref.pos); !ok || typ != recBOF {
+			sh.notSheet = true
+		} else {
+			sh.c.record(ref.pos)
+			sh.chartBlocks(sh.readChart(), 0, 0, false, false)
+		}
 	default:
 		sh.macros = ref.kind == dtMacro
 		// The sheet's records end where those of the next begin.
@@ -197,9 +232,13 @@ func (b *Book) sheet(ctx context.Context, index int) *sheet {
 
 // result is what reading the sheet gave.
 func (sh *sheet) result() *unit.Result {
+	if sh.unreadFormulas > 0 {
+		sh.unread[unreadFormula] += sh.unreadFormulas
+		sh.unreadFormulas = 0
+	}
 	return &unit.Result{Part: sh.part, Tally: unit.Tally{
 		Unread: sh.unread, Macros: sh.macros,
-		Limited: sh.capped || sh.g.Cut != "",
+		Limited: sh.capped || sh.budget || sh.g.Cut != "",
 	}}
 }
 
@@ -257,6 +296,13 @@ func (sh *sheet) record(typ uint16) bool {
 		}
 		return int32(le.Uint16(b)), int32(le.Uint16(b[2:])), sh.b.style(le.Uint16(b[4:])), true
 	}
+	if sh.only != nil {
+		// A reading for cells: nothing else of the sheet is wanted.
+		switch typ {
+		case recMsoDrawing, recObj, recTxo, recNote, recDV, recHLink, recMergeCells, recRow, recColInfo, recDimensions, recWsBool, recSxView:
+			return true
+		}
+	}
 	switch typ {
 	case recLabelSST:
 		if row, col, style, ok := cell(10); ok {
@@ -302,13 +348,18 @@ func (sh *sheet) record(typ uint16) bool {
 			break
 		}
 		sh.strWait = false
+		sh.formula = ""
+		if sh.b.opts != nil && sh.b.opts.Cells {
+			sh.cellFormula(b, row, col)
+		}
 		res := b[6:14]
 		if le.Uint16(res[6:]) != 0xFFFF {
 			return sh.number(row, col, style, math.Float64frombits(le.Uint64(res)))
 		}
 		switch res[0] {
 		case 0:
-			sh.strAt, sh.strStyle, sh.strWait = pos{row, col}, style, true
+			sh.strAt, sh.strStyle, sh.strWait, sh.strFormula = pos{row, col}, style, true, sh.formula
+			sh.formula = ""
 		case 1:
 			text := textFalse
 			if res[2] != 0 {
@@ -325,7 +376,12 @@ func (sh *sheet) record(typ uint16) bool {
 		sh.strWait = false
 		raw, _ := c.str(sh.raw[:0])
 		sh.raw = raw
+		sh.formula = sh.strFormula
 		return sh.str(sh.strAt.row, sh.strAt.col, sh.strStyle, sh.cellText(raw), gofastcore.CellText)
+	case recShrFmla:
+		sh.sharedFormula(b)
+	case recArray:
+		sh.arrayFormula(b)
 	case recLabel, recRString:
 		if row, col, style, ok := cell(9); ok {
 			c.b = b[6:]
@@ -365,9 +421,14 @@ func (sh *sheet) record(typ uint16) bool {
 		// 2.4.90): room is made for its cells at once, as many as that
 		// area and the bytes of the sheet's records can hold, so that
 		// the list of them is not grown and copied as it fills.
-		if len(b) >= 12 && len(sh.g.Cells) == 0 {
-			rows := int64(le.Uint32(b[4:])) - int64(le.Uint32(b))
-			cols := int64(le.Uint16(b[10:])) - int64(le.Uint16(b[8:]))
+		if len(b) >= 10 && len(sh.g.Cells) == 0 {
+			rows := int64(le.Uint16(b[2:])) - int64(le.Uint16(b))
+			cols := int64(le.Uint16(b[6:])) - int64(le.Uint16(b[4:]))
+			if len(b) >= 12 {
+				// As Excel 97 and later write it, with rows in 32 bits.
+				rows = int64(le.Uint32(b[4:])) - int64(le.Uint32(b))
+				cols = int64(le.Uint16(b[10:])) - int64(le.Uint16(b[8:]))
+			}
 			if n := min(rows*cols, int64(sh.size/minCellBytes), maxReserve); rows > 0 && cols > 0 && n > 0 {
 				sh.g.Cells = make([]grid.Cell, 0, n)
 			}
@@ -380,35 +441,91 @@ func (sh *sheet) record(typ uint16) bool {
 			return false
 		}
 	case recBOF:
-		// The records of a chart placed on the sheet: passed over to
-		// their own EOF.
-		for depth := 1; depth > 0; {
-			typ, ok := c.record(c.next)
-			if !ok {
-				sh.cutOff = true
-				return false
+		// The records of a chart placed on the sheet, after the object
+		// that places it.
+		if sh.only != nil {
+			// A reading for cells: the chart's records are passed over.
+			for depth := 1; depth > 0; {
+				typ, ok := c.record(c.next)
+				if !ok {
+					return false
+				}
+				switch typ {
+				case recBOF:
+					depth++
+				case recEOF:
+					depth--
+				}
 			}
-			switch typ {
-			case recBOF:
-				depth++
-			case recEOF:
-				depth--
-			}
+			break
 		}
+		ch := sh.readChart()
+		if ch == nil {
+			return false
+		}
+		sh.chartBlocks(ch, sh.shape.row, sh.shape.col, true, sh.shape.props.Hidden())
 	case recHLink:
 		if sh.b.opts != nil && sh.b.opts.Spans {
 			sh.hyperlink(b)
 		}
+	case recMsoDrawing:
+		sh.drawing(b)
 	case recObj:
-		// The object's kind and number ([MS-XLS] 2.5.143, FtCmo): a note
-		// is kind 0x19.
-		if len(b) >= 8 && le.Uint16(b) == 0x0015 {
-			sh.objNote, sh.objID = le.Uint16(b[4:]) == 0x0019, le.Uint16(b[6:])
+		if sh.b.biff5 {
+			sh.object5(b)
+		} else {
+			sh.object(b)
 		}
 	case recTxo:
-		sh.textObject(b)
+		if sh.objNote {
+			sh.textObject(b)
+		} else {
+			sh.shapeText(b)
+		}
 	case recNote:
-		sh.note(b)
+		if sh.b.biff5 {
+			sh.note5(b)
+		} else {
+			sh.note(b)
+		}
+	case recDV:
+		sh.validation(b)
+	case recSxView:
+		// A pivot table: the cells it fills, the first row of its values
+		// and its name ([MS-XLS] 2.4.313). Its cells are cells of the
+		// sheet; the table says which, and that they are one table.
+		if len(b) < 44 {
+			break
+		}
+		if len(sh.declared) >= warn.MaxPivotTables {
+			sh.lost.Add(warn.CapPivotTables, 1)
+			break
+		}
+		t := grid.Declared{Role: gofastcore.RolePivot,
+			At: grid.Rect{R0: int32(le.Uint16(b)), R1: int32(le.Uint16(b[2:])), C0: int32(le.Uint16(b[4:])), C1: int32(le.Uint16(b[6:]))}}
+		if t.At.R0 > t.At.R1 || t.At.C0 > t.At.C1 || t.At.C1 >= grid.MaxCols {
+			break
+		}
+		// The rows above the first row of values are its headers: the
+		// labels of the column fields.
+		if first := int32(le.Uint16(b[10:])); first > t.At.R0 {
+			t.HeaderRows = int(min(first-t.At.R0, t.At.R1-t.At.R0+1))
+		}
+		if cch := int(le.Uint16(b[40:])); cch > 0 && len(b) > 44 {
+			var raw []byte
+			if sh.b.biff5 {
+				c.b = b[44:]
+				raw, _ = c.bytes(sh.raw[:0], cch)
+			} else {
+				c.b = b[45:]
+				raw, _ = c.chars(sh.raw[:0], cch, b[44]&1 != 0)
+			}
+			sh.raw = raw
+			name, removed := clean.String(raw, clean.Prose)
+			sh.removed += removed
+			t.Name = sh.lost.Name(name)
+		}
+		sh.declared = append(sh.declared, t)
 	}
 	return true
 }
@@ -549,6 +666,18 @@ func (sh *sheet) add(row, col int32, text string, hidden gofastcore.Display, kin
 	if text == "" {
 		return true
 	}
+	if sh.only != nil {
+		// A reading for the cells of some ranges: a chart's data.
+		for _, r := range sh.only {
+			if row >= r.R0 && row <= r.R1 && col >= r.C0 && col <= r.C1 {
+				if len(sh.found) < warn.MaxChartTotal {
+					sh.found[pos{row, col}] = strings.Clone(text)
+				}
+				break
+			}
+		}
+		return true
+	}
 	if col >= grid.MaxCols {
 		sh.lost.Add(warn.CapSheetCols, 1)
 		return true
@@ -570,8 +699,12 @@ func (sh *sheet) add(row, col int32, text string, hidden gofastcore.Display, kin
 		if n := len(sh.details); n > 0 && !before(sh.details[n-1].at, at) {
 			sh.detailsUnsorted = true
 		}
-		sh.details = append(sh.details, detail{at: at, typ: kind, value: value})
+		sh.details = append(sh.details, detail{at: at, typ: kind, value: value, formula: sh.formula})
+		if sh.waiting != nil && sh.waiting.at == at {
+			sh.waiting.index = len(sh.details) - 1
+		}
 	}
+	sh.formula = ""
 	return true
 }
 
@@ -649,8 +782,11 @@ func (sh *sheet) blocks() {
 	if len(sh.details) > 0 || sh.linkAt != nil || sh.links != nil {
 		g.Details = sh
 	}
-	blocks := g.Regions(nil)
+	blocks := g.Regions(sh.declared)
 	blocks = append(blocks, sh.comments()...)
+	blocks = append(blocks, sh.choices()...)
+	blocks = append(blocks, sh.floating...)
+	sh.floating = nil
 	sh.part.Blocks = grid.Arrange(blocks)
 	// The tables hold the text now.
 	g.Cells, sh.details, sh.raw, sh.out = nil, nil, nil, nil
@@ -664,13 +800,16 @@ func (sh *sheet) finish() {
 	if sh.cutOff && !sh.notSheet {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the sheet is cut off: its records break off before their end")
 	}
+	if sh.budget {
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached; pictures from there on are named and not read")
+	}
 	if sh.g.Cut != "" {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, sh.g.Cut+"; the sheet is cut off there")
 	}
 	if sh.lost.Say(part) {
 		sh.capped = true
 	}
-	hasText, hasImage := false, false
+	hasText, hasImage := false, sh.sawImage
 	for i := range part.Blocks {
 		if part.Blocks[i].Kind == gofastcore.KindImage {
 			hasImage = true
@@ -693,6 +832,9 @@ func (sh *sheet) finish() {
 	}
 	if sh.unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(sh.unmapped))
+	}
+	if sh.c.undecoded > 0 {
+		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, undecodedMessage(sh.c.undecoded, sh.b.cp))
 	}
 	part.Finish()
 }

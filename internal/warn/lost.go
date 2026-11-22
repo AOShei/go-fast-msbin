@@ -36,6 +36,24 @@ const (
 	CapMerges
 	CapCellStyles
 	CapNumberFormats
+	CapFormula
+	CapNames
+	CapExternalLinks
+	CapExternalNames
+	CapExternalSheets
+	CapSheetRefs
+	CapSharedFormulas
+	CapChoiceLists
+	CapChoiceRanges
+	CapChartSeries
+	CapChartPoints
+	CapChartTitle
+	CapChartTotal
+	CapCharts
+	CapShapes
+	CapPictures
+	CapChartLookup
+	CapPivotTables
 	numCaps
 )
 
@@ -59,36 +77,71 @@ var caps = [numCaps]capInfo{
 	CapAddress:       {"addresses longer than " + itoa(MaxAddress) + " bytes were cut there", "address", "addresses"},
 	CapName:          {"names longer than " + itoa(MaxName) + " bytes were cut there", "name", "names"},
 
-	CapSheets:        {"sheets past " + itoa(MaxSheets) + " were not read", "sheet", "sheets"},
-	CapSheetCols:     {"cells past column " + itoa(MaxCols) + " of the sheet were not read", "cell", "cells"},
-	CapComments:      {"comments of a sheet past " + itoa(MaxComments) + " were not read", "comment", "comments"},
-	CapLinks:         {"hyperlinks of a sheet past " + itoa(MaxLinks) + " were not read", "hyperlink", "hyperlinks"},
-	CapMerges:        {"merged ranges of a sheet past " + itoa(MaxMerges) + " were not read; their cells are given unmerged", "range", "ranges"},
-	CapCellStyles:    {"cell formats and fonts of the workbook past " + itoa(MaxCellStyles) + " were not read; cells that use them show their values unformatted", "format", "formats"},
-	CapNumberFormats: {"number formats of the workbook past " + itoa(MaxNumberFormats) + " were not read; cells that use them show their values unformatted", "format", "formats"},
+	CapSheets:         {"sheets past " + itoa(MaxSheets) + " were not read", "sheet", "sheets"},
+	CapSheetCols:      {"cells past column " + itoa(MaxCols) + " of the sheet were not read", "cell", "cells"},
+	CapComments:       {"comments of a sheet past " + itoa(MaxComments) + " were not read", "comment", "comments"},
+	CapLinks:          {"hyperlinks of a sheet past " + itoa(MaxLinks) + " were not read", "hyperlink", "hyperlinks"},
+	CapMerges:         {"merged ranges of a sheet past " + itoa(MaxMerges) + " were not read; their cells are given unmerged", "range", "ranges"},
+	CapCellStyles:     {"cell formats and fonts of the workbook past " + itoa(MaxCellStyles) + " were not read; cells that use them show their values unformatted", "format", "formats"},
+	CapNumberFormats:  {"number formats of the workbook past " + itoa(MaxNumberFormats) + " were not read; cells that use them show their values unformatted", "format", "formats"},
+	CapFormula:        {"formulas longer than " + itoa(MaxFormula) + " bytes were not read back", "formula", "formulas"},
+	CapNames:          {"defined names past " + itoa(MaxNames) + " were not read", "name", "names"},
+	CapExternalLinks:  {"links to other workbooks past " + itoa(MaxExternalLinks) + " were not read; formulas that use them are not read back", "link", "links"},
+	CapExternalNames:  {"names of a linked workbook past " + itoa(MaxExternalNames) + " were not read; formulas that use them are not read back", "name", "names"},
+	CapExternalSheets: {"sheets of a linked workbook past " + itoa(MaxExternalNames) + " were not read; formulas that use them are not read back", "sheet", "sheets"},
+	CapSheetRefs:      {"references of the workbook's formulas to other sheets past " + itoa(MaxSheetRefs) + " were not read; formulas that use them are not read back", "reference", "references"},
+	CapChoiceLists:    {"drop-down lists of a sheet past " + itoa(MaxChoiceLists) + " were not read", "list", "lists"},
+	CapChoiceRanges:   {"ranges of a sheet's drop-down lists past " + itoa(MaxChoiceRanges) + " were not read", "range", "ranges"},
+	CapChartSeries:    {"chart series past " + itoa(MaxChartSeries) + " were not read", "series", "series"},
+	CapChartPoints:    {"chart points at an index past " + itoa(MaxChartPoints) + " were not read", "point", "points"},
+	CapChartTitle:     {"chart and series titles longer than " + itoa(MaxChartTitle) + " bytes were cut there", "title", "titles"},
+	CapChartTotal:     {"charts holding more than " + itoa(MaxChartTotal) + " points were cut there", "chart", "charts"},
+	CapCharts:         {"charts of a sheet past " + itoa(MaxCharts) + " were not read", "chart", "charts"},
+	CapShapes:         {"shapes of a sheet with text past " + itoa(MaxShapes) + " were not read", "shape", "shapes"},
+	CapPictures:       {"pictures of the document past " + itoa(MaxPictures) + " were not read; shapes that show them are given with no picture", "picture", "pictures"},
+	CapChartLookup:    {"charts whose data is in sheets of more than " + itoa(MaxChartLookup>>20) + " MiB in all were given with what the charts keep of it, not with what the cells show", "chart", "charts"},
+	CapPivotTables:    {"pivot tables of a sheet past " + itoa(MaxPivotTables) + " were not read as tables; their cells are given as cells of the sheet", "table", "tables"},
+	CapSharedFormulas: {"shared formulas of a sheet past " + itoa(MaxSharedFormulas) + " were not kept; cells that use them give no formula", "formula", "formulas"},
 }
 
 // The bounds, where the code that keeps to them and the messages above
 // both need them.
 const (
-	MaxProjects      = 16
-	MaxProjectSize   = 1 << 28
-	MaxModules       = 1 << 12
-	MaxPropertyName  = clean.MaxLabel
-	MaxPropertyValue = 64 << 10
-	MaxCustomProps   = 256
-	MaxProperties    = 1 << 12
-	MaxObjects       = 1 << 12
-	MaxObjectDepth   = 64
-	MaxAddress       = clean.MaxAddress
-	MaxName          = clean.MaxLabel
-	MaxSheets        = 1 << 16
-	MaxCols          = 1 << 14
-	MaxComments      = 1 << 18
-	MaxLinks         = 1 << 18
-	MaxMerges        = 1 << 18
-	MaxCellStyles    = 1 << 17
-	MaxNumberFormats = 1 << 13
+	MaxProjects       = 16
+	MaxProjectSize    = 1 << 28
+	MaxModules        = 1 << 12
+	MaxPropertyName   = clean.MaxLabel
+	MaxPropertyValue  = 64 << 10
+	MaxCustomProps    = 256
+	MaxProperties     = 1 << 12
+	MaxObjects        = 1 << 12
+	MaxObjectDepth    = 64
+	MaxAddress        = clean.MaxAddress
+	MaxName           = clean.MaxLabel
+	MaxSheets         = 1 << 16
+	MaxCols           = 1 << 14
+	MaxComments       = 1 << 18
+	MaxLinks          = 1 << 18
+	MaxMerges         = 1 << 18
+	MaxCellStyles     = 1 << 17
+	MaxNumberFormats  = 1 << 13
+	MaxFormula        = 32 << 10
+	MaxNames          = 1 << 14
+	MaxExternalLinks  = 1 << 16
+	MaxExternalNames  = 1 << 16
+	MaxSheetRefs      = 1 << 16
+	MaxSharedFormulas = 1 << 20
+	MaxChoiceLists    = 1 << 14
+	MaxChoiceRanges   = 1 << 18
+	MaxChartSeries    = 1 << 10
+	MaxChartPoints    = 1 << 20
+	MaxChartTitle     = 4096
+	MaxChartTotal     = 1 << 21
+	MaxCharts         = 1 << 12
+	MaxPivotTables    = 1 << 10
+	MaxChartLookup    = 256 << 20
+	MaxShapes         = 1 << 16
+	MaxPictures       = 1 << 16
 )
 
 // Message is the text of the warning for n items a bound left out.

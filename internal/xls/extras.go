@@ -60,6 +60,40 @@ func (sh *sheet) note(b []byte) {
 	sh.notes = append(sh.notes, n)
 }
 
+// note5 reads a Note record of Excel 5 or 95: the cell a comment is on,
+// the length of its text and the text, which goes on in Note records
+// with a row of 0xFFFF where it is longer than a record.
+func (sh *sheet) note5(b []byte) {
+	if len(b) < 6 {
+		return
+	}
+	row, length := le.Uint16(b), int(le.Uint16(b[4:]))
+	c := &sh.c
+	c.b = b[6:]
+	raw, _ := c.bytes(sh.raw[:0], min(length, len(c.b)))
+	sh.raw = raw
+	text, removed := clean.String(raw, clean.Prose)
+	sh.removed += removed
+	if row == 0xFFFF {
+		// More of the text of the note before.
+		if n := len(sh.notes); n > 0 && sh.noteText != nil {
+			sh.noteText[sh.notes[n-1].obj] += text
+		}
+		return
+	}
+	if len(sh.notes) >= warn.MaxComments {
+		sh.lost.Add(warn.CapComments, 1)
+		return
+	}
+	// The text is kept as that of an object numbered by the note's place.
+	n := comment{row: int32(row), col: int32(le.Uint16(b[2:])), obj: uint16(len(sh.notes))}
+	if sh.noteText == nil {
+		sh.noteText = map[uint16]string{}
+	}
+	sh.noteText[n.obj] = text
+	sh.notes = append(sh.notes, n)
+}
+
 // comments returns the comments of the sheet as notes at their cells.
 func (sh *sheet) comments() []grid.Placed {
 	var out []grid.Placed

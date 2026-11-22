@@ -297,6 +297,37 @@ Found on the way:
 - **A formula record under its older number** (0x0206, 0x0406) appears in workbooks of this generation written by other programs, and is read.
 - **Defined names** move to Phase 3: a name's value is a formula, and reading formulas back as text is that phase's.
 
+### Phase 3: result (2026-11-22)
+
+Done, on branch `phase-3-excel-rest`. The rest of what a workbook holds, and workbooks of Excel 5 and 95.
+
+- **Formula text** (`internal/ptg`): go-fast-ooxml's parser for the formulas of `.xlsb` files, with the token layouts of this format and of Excel 5/95. With `Options.Cells` a cell gives its formula, shared and array formulas among them. A formula that cannot be read back is left out and counted (`msbin.unread_content`). A function newer than Excel 97, which the file keeps as a call by name (`_xlfn.SUMIFS`), is written as an `.xlsx` file writes it; numbers are written to fifteen digits, as Excel shows them.
+- **Stored part**: defined names (`defined_name`, a name local to a sheet with the sheet in front, Excel's own names as `_xlnm.…`), and the formulas of each macro sheet as code (`macro`, `language` `excel4`), before the VBA modules.
+- **Links to other workbooks** are `input.external_reference`; formulas through them are written `[1]Sheet!A1`.
+- **Drop-down lists** are `note` `choices` at their cells: the values, or the formula they come from; hidden where the arrow is, or every cell.
+- **The drawing layer** (`internal/officeart`, shared by the three formats): records, a shape's properties, the store of pictures with bitmaps passed through and compressed metafiles expanded within the decode budget. On a sheet: text boxes and WordArt as paragraphs, pictures as `image` blocks with alternative text, each at the cell it is anchored to; a shape marked hidden is `hidden`.
+- **Charts** (`internal/chart`, go-fast-ooxml's table of a chart's data): type, titles of the chart and its axes, the series. A chart of this format often keeps no copy of its data: where a series names the cells it plots, those cells are read, as they show; otherwise what the chart keeps. A chart sheet is a part with the chart's blocks.
+- **Pivot tables** are tables with `role` `pivot`, their name and header rows, over the cells they fill.
+- **Excel 5/95** (BIFF5): strings in the workbook's code page, its own name, note and object records, its formula tokens. Read by the same reader.
+
+**Measured:**
+
+| | |
+|---|---|
+| Cells against xlrd, 1,063 workbooks (16 of Excel 5/95) | 12,180,746 agree; 10 differ |
+| Cells as shown against LibreOffice | 12,860,182 of 12,899,668 agree (99.69 %) |
+| Against the `.xlsx` twin LibreOffice writes, read by go-fast-ooxml (`TestTwins`), 1,072 workbooks | 17,892,191 of 17,929,209 cells the same (99.79 %); 105,639 of 105,690 tables have the same range; 2,035 of 2,190 notes the same; 385 charts here, 252 in the twins, 161 identical |
+| Formulas against the twins | 286,115 the same; 7,913 differ, by LibreOffice's rewriting (a deleted sheet's reference without its cell, `TABLE()` for a what-if table, its own names for some functions) |
+| Workbooks read | 1,072 of 1,111 (calamine 1,064); the rest are Excel 2 to 4, encrypted (Phase 7), damaged or not workbooks |
+| `large.xls` | 0.05 s with all workers, 0.10 s with one, on a machine with nothing else running (Phase 2 measured 0.08 s and 0.15 s beside other work) |
+| Fuzzing | `FuzzWorkbook` 14 million executions, `FuzzExtract` 23 million. Two findings, fixed: a cell name for a column past three letters, and control characters in a formula's string |
+
+Found on the way:
+
+- **go-fast-ooxml translates a whole cell by its font**, and the twins show it: a cell with a Symbol bullet before its words comes out in Greek letters there (`TestTwins`, published files among them). Reported in Phase 2; confirmed here.
+- **LibreOffice's files are not Excel's.** It writes `TRUE()` for TRUE, 0 for an argument left out, a cell for a range of one cell, and recalculates. The comparisons allow for what could be told apart; the rest lowers the figures above without being a difference in reading.
+- **Not read**: the records of a pivot cache whose source is gone (`pivot_cache`), the text of text boxes of Excel 5/95 (kept in the object's own record), several levels of categories of a chart (the innermost is given), a picture kept outside the file. Counted or absent, never guessed.
+
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).
 
 ## 8. Risks

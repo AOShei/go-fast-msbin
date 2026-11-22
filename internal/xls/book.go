@@ -11,6 +11,8 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin/internal/clean"
 	"github.com/AOShei/go-fast-msbin/internal/numfmt"
+	"github.com/AOShei/go-fast-msbin/internal/officeart"
+	"github.com/AOShei/go-fast-msbin/internal/ptg"
 	"github.com/AOShei/go-fast-msbin/internal/stored"
 	"github.com/AOShei/go-fast-msbin/internal/symbol"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
@@ -34,8 +36,14 @@ type Config struct {
 type sheetRef struct {
 	name   string
 	pos    int  // where its records begin in the stream
+	place  int  // its place among the BoundSheet records, which formulas name it by
 	hidden bool // hidden, or hidden so that only a program can show it
 	kind   byte // dtWorksheet and the like
+}
+
+// sheetPlace is where the records of a sheet are.
+type sheetPlace struct {
+	pos, size int
 }
 
 // The kinds of sheet a BoundSheet8 record names ([MS-XLS] 2.4.28).
@@ -63,18 +71,42 @@ type Book struct {
 	opts     *gofastcore.Options
 	cfg      Config
 	date1904 bool
-	refs     []sheetRef
-	styles   []cellStyle
-	text     string   // the shared strings, one after another
-	ends     []uint32 // where each ends in text
+	// biff5 says the workbook is of Excel 5 or 95, whose strings are
+	// bytes in the code page cp.
+	biff5  bool
+	cp     int
+	refs   []sheetRef
+	styles []cellStyle
+	text   string   // the shared strings, one after another
+	ends   []uint32 // where each ends in text
 	// rich has, for the shared strings that change font partway, where
 	// each change is and which symbol font the text is in from there, if
 	// it is one. It is kept only for a workbook that has a symbol font.
-	rich    map[uint32][]fontRun
-	fonts   []symbol.Font
-	removed int      // control characters removed from shared strings
-	damaged []string // what could not be read to its end
-	docLost warn.Lost
+	rich      map[uint32][]fontRun
+	fonts     []symbol.Font
+	removed   int // control characters removed from shared strings
+	undecoded int // characters of the names of sheets and formats that their code page does not define
+
+	// places is where the records of each sheet begin, and how many bytes
+	// of them there are at most, in the order of the BoundSheet records.
+	places []sheetPlace
+
+	// codes are the number formats the workbook defines, by number.
+	codes map[int]string
+
+	// pictures is the store of pictures the shapes of the sheets show.
+	pictures []officeart.StoreEntry
+
+	// What formulas refer to outside themselves, and what the workbook
+	// stores and shows on no sheet (formulas.go).
+	formulas    ptg.Book
+	names       []definedName
+	external    int       // links to other workbooks and files
+	unreadNames int       // defined names whose formulas are not read back
+	macroSheets bool      // the workbook has sheets of macros
+	lost        warn.Lost // what the bounds left out of the stored part
+	damaged     []string  // what could not be read to its end
+	docLost     warn.Lost
 
 	cells atomic.Int64 // cells that may still be kept
 }
@@ -108,11 +140,18 @@ func (b *Book) globals() {
 	var xfs []xf
 	codes := map[int]string{}
 	var scratch []byte
+	var links linkReader
+	var group []byte // the records of the drawing group
 	at := 0
 	typ, ok := c.record(at)
 	if !ok || typ != recBOF {
 		b.damaged = append(b.damaged, "Workbook")
 		return
+	}
+	// The version's high byte says which generation wrote the workbook.
+	if len(c.b) >= 2 && le.Uint16(c.b)>>8 == 5 {
+		b.biff5, b.cp = true, 1252
+		c.cp = b.cp
 	}
 	ended := false
 	for at = c.next; !ended; at = c.next {
@@ -126,6 +165,21 @@ func (b *Book) globals() {
 			ended = true
 		case recDateMode:
 			b.date1904 = len(body) >= 2 && le.Uint16(body) != 0
+		case recCodePage:
+			// The code page of the workbook's strings, for a workbook
+			// that keeps them in one ([MS-XLS] 2.4.52): two values stand
+			// for the Macintosh's and for Windows'.
+			if b.biff5 && len(body) >= 2 {
+				switch cp := int(le.Uint16(body)); cp {
+				case 0x8000:
+					b.cp = 10000
+				case 0x8001:
+					b.cp = 1252
+				default:
+					b.cp = cp
+				}
+				c.cp = b.cp
+			}
 		case recFont:
 			// The font's name follows fourteen bytes of its properties
 			// ([MS-XLS] 2.4.122).
@@ -151,7 +205,11 @@ func (b *Book) globals() {
 				continue
 			}
 			c.b = body[2:]
-			if code, ok := c.str(scratch[:0]); ok {
+			read := c.str
+			if b.biff5 {
+				read = c.shortStr // its length is in a byte
+			}
+			if code, ok := read(scratch[:0]); ok {
 				// Text a format writes into a cell is text like any other.
 				codes[int(le.Uint16(body))], _ = clean.String(code, clean.Ligatures)
 				scratch = code
@@ -173,9 +231,20 @@ func (b *Book) globals() {
 			c.b = body[6:]
 			name, _ := c.shortStr(scratch[:0])
 			scratch = name
+			// A formula names a sheet by its place in this list, the
+			// modules of the VBA project among them.
+			ref.place = len(b.places)
+			if len(b.places) < warn.MaxSheets {
+				b.places = append(b.places, sheetPlace{pos: ref.pos})
+			}
+			if len(links.sheets) < warn.MaxSheets {
+				shown, _ := clean.String(name, clean.Prose)
+				links.sheets = append(links.sheets, clean.Label(shown))
+			}
 			if ref.kind == dtVBA {
 				continue // a module: its source is read with the VBA project
 			}
+			b.macroSheets = b.macroSheets || ref.kind == dtMacro
 			if len(b.refs) >= warn.MaxSheets {
 				b.docLost.Add(warn.CapSheets, 1)
 				continue
@@ -187,14 +256,64 @@ func (b *Book) globals() {
 		case recSST:
 			b.fonts = fonts
 			b.strings(&c)
+		case recMsoDrawingGroup:
+			// The drawing group, which holds the pictures: it goes on in
+			// records of its own kind and in CONTINUE records.
+			if b.opts == nil || b.opts.Images != gofastcore.ImagesNone {
+				group = append(group, body...)
+				for c.next+4 <= len(b.data) {
+					if t := le.Uint16(b.data[c.next:]); t != recContinue && t != recMsoDrawingGroup {
+						break
+					}
+					c.record(c.next)
+					group = append(group, c.b...)
+				}
+			}
+		case recSupBook:
+			links.supBook(b, &c)
+		case recExternName:
+			if !b.biff5 {
+				links.externName(b, &c)
+			}
+		case recExternSheet:
+			if b.biff5 {
+				// One record for each sheet formulas name outside this
+				// one; an encoded path is another file's.
+				if len(body) >= 2 && body[1] == 0x01 {
+					b.external++
+				}
+			} else {
+				links.externSheet(b, body)
+			}
+		case recName:
+			links.name(b, &c)
 		}
 	}
 	if !ended || c.short {
 		b.damaged = append(b.damaged, "Workbook")
 	}
+	b.undecoded = c.undecoded
+	b.formulas.BIFF5, b.formulas.CodePage = b.biff5, b.cp
 
 	formats := map[uint16]*numfmt.Format{}
 	b.styles = make([]cellStyle, len(xfs))
+	if len(group) > 0 {
+		var past int
+		b.pictures, past = officeart.Store(group, warn.MaxPictures)
+		b.docLost.Add(warn.CapPictures, int64(past))
+	}
+	b.codes = codes
+	// The records of a sheet end where those of the next begin.
+	for i := range b.places {
+		end := len(b.data)
+		for _, other := range b.places {
+			if other.pos > b.places[i].pos && other.pos < end {
+				end = other.pos
+			}
+		}
+		b.places[i].size = max(end-b.places[i].pos, 0)
+	}
+	links.finish(b)
 	b.fonts = fonts
 	for i, x := range xfs {
 		f, ok := formats[x.format]
@@ -367,7 +486,7 @@ func (b *Book) Len() int {
 
 // Stored returns the index of the stored part, or -1 if there is none.
 func (b *Book) Stored() int {
-	if !b.cfg.HasStored {
+	if !b.cfg.HasStored && len(b.names) == 0 && !b.macroSheets {
 		return -1
 	}
 	return max(len(b.refs), 1)
@@ -386,10 +505,7 @@ func (b *Book) Limited() bool { return false }
 // Read reads the sheet with the given index into a part.
 func (b *Book) Read(ctx context.Context, index int) *unit.Result {
 	if index == b.Stored() {
-		part := stored.NewPart(ctx, index+1)
-		b.cfg.Stored(ctx, part)
-		limited := part.Finish()
-		return &unit.Result{Part: part.Part, Tally: unit.Tally{Damaged: part.Damaged, Limited: limited}}
+		return b.readStored(ctx, index)
 	}
 	if len(b.refs) == 0 {
 		// A workbook with no sheets, or whose list of them could not be
@@ -415,10 +531,27 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 		out = append(out, gofastcore.Warning{Code: gofastcore.WarnInputActiveContent, Severity: gofastcore.SeverityInfo,
 			Message: "macro sheets (Excel 4.0 macros); what their cells show is read, the macros are not"})
 	}
+	// The links to other workbooks are the document's, whichever sheets
+	// were read.
+	if b.external > 0 {
+		tallies = append(tallies[:len(tallies):len(tallies)], &unit.Tally{External: b.external})
+	}
+	if b.unreadNames > 0 {
+		tallies = append(tallies[:len(tallies):len(tallies)], &unit.Tally{Unread: map[string]int{unreadFormula: b.unreadNames}})
+	}
 	out = append(out, unit.Summarize(tallies, b.damaged)...)
+	if b.undecoded > 0 {
+		out = append(out, gofastcore.Warning{Code: gofastcore.WarnTextUnmappedGlyphs, Severity: gofastcore.SeverityWarning,
+			Message: undecodedMessage(b.undecoded, b.cp)})
+	}
 	if b.removed > 0 {
 		out = append(out, gofastcore.Warning{Code: warn.ControlCharsRemoved, Severity: gofastcore.SeverityInfo,
 			Message: strconv.Itoa(b.removed) + " in shared strings and sheet names"})
 	}
 	return out
+}
+
+// undecodedMessage says how many characters a code page did not give.
+func undecodedMessage(n, cp int) string {
+	return strconv.Itoa(n) + " characters in code page " + strconv.Itoa(cp) + ", which it does not define or which is not known here, are U+FFFD"
 }

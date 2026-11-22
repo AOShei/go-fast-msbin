@@ -3,12 +3,14 @@ package gofastmsbin
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"iter"
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/AOShei/go-fast-msbin/internal/detect"
 	"github.com/AOShei/go-fast-msbin/internal/doc"
 	"github.com/AOShei/go-fast-msbin/internal/embed"
+	"github.com/AOShei/go-fast-msbin/internal/ppt"
 	"github.com/AOShei/go-fast-msbin/internal/stored"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
@@ -39,24 +42,27 @@ import (
 // over one pass: one call of Document, Part or Children, or one run
 // through Parts. Passes that run at the same time share it.
 type File struct {
-	e         Extractor
-	opts      gofastcore.Options
-	r         io.ReaderAt
-	size      int64
-	closer    io.Closer
-	cf        *cfb.File
-	info      detect.Info
-	source    gofastcore.Source
-	meta      gofastcore.Metadata
-	opened    []gofastcore.Warning // warnings about the document known when it was opened
-	projects  [][]string           // the storages that hold a VBA project
-	objects   []embed.Object       // the embedded objects
-	book      []byte               // a workbook's stream of records
-	word      []byte               // a Word document's main stream
-	wordTable []byte               // and its table stream
-	parts     int
-	stored    int // the index of the stored part, or -1
-	noun      string
+	e           Extractor
+	opts        gofastcore.Options
+	r           io.ReaderAt
+	size        int64
+	closer      io.Closer
+	cf          *cfb.File
+	info        detect.Info
+	source      gofastcore.Source
+	meta        gofastcore.Metadata
+	opened      []gofastcore.Warning // warnings about the document known when it was opened
+	projects    [][]string           // the storages that hold a VBA project
+	objects     []embed.Object       // the embedded objects
+	deck        []byte               // a presentation's stream of records
+	pictures    []byte               // and its stream of pictures
+	currentEdit uint32               // where the presentation's last edit is
+	book        []byte               // a workbook's stream of records
+	word        []byte               // a Word document's main stream
+	wordTable   []byte               // and its table stream
+	parts       int
+	stored      int // the index of the stored part, or -1
+	noun        string
 
 	mu      sync.Mutex
 	sess    *session            // the reading in use
@@ -183,6 +189,9 @@ func (e *Extractor) open(ctx context.Context, r io.ReaderAt, size int64, opts *g
 		return nil, err
 	}
 	f.sess, f.clean = sess, !sess.src.Limited()
+	if deck, ok := sess.src.(*ppt.Deck); ok && deck.Macros() && len(f.projects) == 0 {
+		warn(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent, "a VBA project (macros); its code is read as text into the stored part, and none of it is run")
+	}
 	f.parts, f.noun = sess.src.Len(), sess.src.Noun()
 	f.stored = sess.src.Stored()
 	return f, nil
@@ -239,12 +248,51 @@ func (f *File) reader() (*session, error) {
 		}
 		return &session{src: d}, nil
 	}
+	if f.deck != nil {
+		cfg := ppt.Config{Pictures: f.pictures, CurrentEdit: f.currentEdit, HasStored: len(f.projects) > 0, Chart: f.graph,
+			Stored: func(ctx context.Context, part *stored.Part) { stored.Macros(ctx, f.cf, f.projects, part) }}
+		return &session{src: ppt.Open(f.deck, &f.opts, cfg)}, nil
+	}
 	if f.book != nil {
 		cfg := xls.Config{MaxCells: gofastcore.ResolveLimit(f.e.MaxCells, DefaultMaxCells), HasStored: len(f.projects) > 0,
 			Stored: func(ctx context.Context, part *stored.Part) { stored.Macros(ctx, f.cf, f.projects, part) }}
 		return &session{src: xls.Open(f.book, &f.opts, cfg)}, nil
 	}
 	return &session{src: &pending{f: f, version: f.info.Version}}, nil
+}
+
+// graph reads the compound file of a Microsoft Graph chart, which keeps
+// the chart and its datasheet in a workbook stream, into the chart's
+// blocks.
+func (f *File) graph(ctx context.Context, storage []byte) (blocks []gofastcore.Block, cut, ok bool) {
+	cf, err := cfb.Open(bytes.NewReader(storage), int64(len(storage)))
+	if err != nil {
+		return nil, false, false
+	}
+	s, err := cf.Open("Workbook")
+	if err != nil {
+		if s, err = cf.Open("Book"); err != nil {
+			return nil, false, false
+		}
+	}
+	data, _, err := unit.ReadAll(s, s.Size())
+	if err != nil && len(data) == 0 {
+		return nil, false, false
+	}
+	book := xls.Open(data, &f.opts, xls.Config{MaxCells: gofastcore.ResolveLimit(f.e.MaxCells, DefaultMaxCells)})
+	if book.Stored() == 0 {
+		return nil, false, false // no sheet, only what is stored
+	}
+	res := book.Read(ctx, 0)
+	for _, b := range res.Part.Blocks {
+		switch {
+		case b.Kind == gofastcore.KindCaption:
+			blocks = append(blocks, b)
+		case b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart:
+			blocks, ok = append(blocks, b), true
+		}
+	}
+	return blocks, res.Tally.Limited, ok
 }
 
 // load reads into memory the stream the reader of the file's format
@@ -265,6 +313,45 @@ func (f *File) load() error {
 				Message: fmt.Sprintf("the document's stream breaks off after %d of %d bytes; what was read of it is used", len(data), s.Size())})
 		}
 		f.word = data
+		return nil
+	}
+	if f.info.Format == detect.Ppt {
+		// A presentation saved for PowerPoint 95 and 97 both keeps the
+		// one this library reads in a storage of its own.
+		var in []string
+		if f.cf.Has(detect.DualStorage, "PowerPoint Document") {
+			in = []string{detect.DualStorage}
+		}
+		open := func(name string) (unit.Stream, error) { return f.cf.Open(append(in[:len(in):len(in)], name)...) }
+		s, err := open("PowerPoint Document")
+		if err != nil {
+			return fmt.Errorf("gofastmsbin: the presentation's stream cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
+		}
+		data, _, err := unit.ReadAll(s, s.Size())
+		if err != nil && len(data) == 0 {
+			return fmt.Errorf("gofastmsbin: the presentation's stream cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
+		}
+		if err != nil {
+			f.opened = append(f.opened, gofastcore.Warning{Code: gofastcore.WarnInputRepaired, Severity: gofastcore.SeverityWarning,
+				Message: fmt.Sprintf("the presentation's stream breaks off after %d of %d bytes; what was read of it is used", len(data), s.Size())})
+		}
+		if data == nil {
+			data = []byte{} // an empty stream is still a presentation's
+		}
+		f.deck = data
+		// Where the last edit is: the Current User stream says.
+		if cu, err := open("Current User"); err == nil {
+			var head [20]byte
+			if n, _ := cu.ReadAt(head[:], 0); n == len(head) {
+				f.currentEdit = binary.LittleEndian.Uint32(head[16:])
+			}
+		}
+		// The pictures of the shapes, where they are asked for.
+		if f.opts.Images != gofastcore.ImagesNone {
+			if s, err := open("Pictures"); err == nil {
+				f.pictures, _, _ = unit.ReadAll(s, s.Size())
+			}
+		}
 		return nil
 	}
 	if f.info.Format != detect.Xls {
@@ -375,6 +462,28 @@ func (f *File) known() (*session, []*unit.Tally) {
 func (f *File) hand(ctx context.Context, limited bool) ([]*gofastcore.Document, *unit.Tally) {
 	read := !limited && !gofastcore.TextBudgetFrom(ctx).Spent()
 	res := embed.Hand(ctx, f.cf, &f.opts, f.objects, read)
+	// A presentation keeps its embedded objects in records of its
+	// stream, each a compound file.
+	f.mu.Lock()
+	sess := f.sess
+	f.mu.Unlock()
+	if deck, ok := sess.src.(*ppt.Deck); ok {
+		ids, files, limited := deck.Objects(ctx)
+		res.Limited = res.Limited || limited
+		for i, data := range files {
+			name, mime := "object"+strconv.FormatUint(uint64(ids[i]), 10), "application/x-ole-storage"
+			if cf, err := cfb.Open(bytes.NewReader(data), int64(len(data))); err == nil {
+				if in := detect.Compound(cf); in.Format != "" {
+					name, mime = name+"."+in.Format, detect.MIME(in.Format)
+				}
+			}
+			if data == nil || !read || f.opts.Child == nil {
+				res.Children = append(res.Children, f.opts.ExtractChild(ctx, name, mime, nil, int64(len(data))))
+			} else {
+				res.Children = append(res.Children, f.opts.ExtractChild(ctx, name, mime, bytes.NewReader(data), int64(len(data))))
+			}
+		}
+	}
 	tally := &unit.Tally{External: res.Links, Damaged: res.Damaged, Limited: res.Limited}
 	var lost warn.Lost
 	lost.Add(warn.CapObjectDepth, res.Deep)

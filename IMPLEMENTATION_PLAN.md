@@ -366,6 +366,45 @@ Found on the way:
 - **A row's definition is often too long for its page of properties**, and is then in the Data stream with a pointer on the page. Without it a table broke into pieces at every such row.
 - **Not read**: form fields (their values are field results, and so are text; their drop-down entries are not given), equations (objects of the equation editor: listed as embedded files), the single-change form of a fast-saved piece's property modifier, and for Word 6/95 everything said above.
 
+### Phase 6: result (2026-11-22)
+
+On branch `phase-6-powerpoint`: PowerPoint presentations of PowerPoint 97 to 2003.
+
+- **The reader** (`internal/ppt`): the chain of edits from the Current User stream back to the first, and the persist directory each gives, so that the presentation is what the last edit left; the document's lists of slides, masters and notes pages; one `slide` part per slide with `Width`, `Height` and `Loc.BBox` on every block; slides read in parallel.
+- **Text**: a slide's title and body are texts of the outline, which the document keeps with the list of slides; a text box holds its own. The kind of a block comes from the shape's placeholder (title, centred title: `heading` 1 and the part's name; subtitle: `heading` 2; date, footer, number: `footer`), as an `.pptx` file has it. Paragraphs, their levels, and their bullets from the paragraph or from the master's style for the kind of text and the level; the kinds of body text (centred, half, quarter) take what they do not say from the body's style. Bullets and characters of symbol fonts are translated by go-fast-ooxml's tables.
+- **Numbered paragraphs**: the numbers are in what PowerPoint 2000 added to the format (a record of the document for the outline's texts, a record of the shape for its own), found through the run the paragraph's characters name. Counted by level, in the scheme the file gives.
+- **Masters**: a master's own text and pictures are given with every slide that follows it, as `header` or `footer` by where they are on the slide, as go-fast-ooxml gives a layout's and a master's; the same thing twice in one place is given once. The date, the footer and the slide's number are given where the presentation or the slide says they are shown and the master has a place for them, in the master's words with the slide's values in its fields. Today's date is not in the file and is not given.
+- **Tables** (a group of shapes marked as a table) by the places of the cells; **groups** with the places of their shapes worked out through the group's own coordinates; **pictures** from the Pictures stream; **notes** a paragraph at a time; **comments** with author and date; **links** as spans; an action that runs a macro or starts a program is `input.active_content`.
+- **Charts**: a Microsoft Graph object keeps a workbook stream with the chart and a datasheet of the cells behind it. The datasheet is read by the Excel reader (`internal/xls`) and given as the chart's table at the place of the shape, on the slide, with the chart's type; the first row names what runs across and the first column what runs down, and each further row is a series.
+- **Embedded objects** are records of the presentation's stream, each a compound file, often compressed: handed on as files (a workbook, a Word document, another presentation are read by this library). The VBA project is such a record too, and its modules are in the stored part.
+- **Declared**: `hidden` for a slide left out of the show (the part) and a shape marked hidden. Nothing in this format answers to `no_ink`.
+- **Repairs**: a file whose Current User stream does not lead to an edit is read from the last edit its stream holds (`input.repaired`). A file saved for PowerPoint 95 and 97 both is read from the storage that holds the PowerPoint 97 copy; a file with only the streams of PowerPoint 95 is refused as that generation.
+
+**Measured:**
+
+| | |
+|---|---|
+| Against the `.pptx` twin LibreOffice writes, read by go-fast-ooxml (`TestPptTwins`), 462 presentations | Without headers and footers: 54,845 blocks identical in kind, level, marker and text; 1,516 only here; 1,417 only in the twin. Words: recall 0.997, precision 0.976. By kind: 19,332 list items identical of about 20,200; 5,696 headings of 5,800; 26,261 paragraphs of 26,800; 3,317 notes of 3,700 |
+| Headers and footers against the twin | 3,889 identical; 1,630 only here; 3,182 only in the twin. See below: most of the difference is how LibreOffice writes fields |
+| Pictures per slide against the twin, 120 presentations | the same number on 3,026 of 3,104 slides |
+| `large.ppt`, 1,500 slides | 0.007 s with all processors, 0.027 s with one (target 0.1 s) |
+| Presentations read | 483 of the 510 in the corpus; the rest are PowerPoint 95 (3), encrypted (8, Phase 7), damaged containers (10) or encrypted packages of the newer format (6) |
+| Microsoft Graph charts | 37 in the first 250 presentations, all read onto their slides |
+| Fuzzing | `FuzzPresentation` 32 million executions. Two findings, fixed: a slide size below zero, and a text of the outline that named a text of the outline (endless recursion) |
+
+What the differences from the twins are:
+
+- **Headers and footers**: LibreOffice writes a master's fields as the words `<footer>`, `<number>` and `<date/time>`, and today's date as the day it converted the file; this library gives the footer and the number, and no date the file does not hold. It also gives the whole text of a number's place ("Page 5", or a number with a name after it) where LibreOffice keeps the number only.
+- **Only here** (precision): notes and body text LibreOffice dropped when converting (the notes of one presentation are most of it), and the numbers of notes pages.
+- **Only in the twin** (recall): equations, which LibreOffice converts to text and which are objects of the equation editor here (most of the 510 paragraphs only in the twin), and tables that are embedded Word or Excel objects.
+
+Found on the way:
+
+- **The strings of a property vector are not padded.** Office writes the strings of a vector (the titles of the parts of a document) one after another; reading each as padded to four bytes, as the description of the format reads, made the properties of most presentations and many workbooks look damaged (`msbin.properties_damaged`). Read as written, none of 60 published files says so.
+- **A master's style for a kind of body text says only what differs from the body's.** Without that inheritance about 650 list items had a plain bullet in place of the master's.
+- **What PowerPoint 2000 added is not where the rest is**: the document's part of it is inside the list of the document's other information, a shape's part inside the shape's own data, both wrapped in a record that is not marked as holding records.
+- **Not read**: sound and video; equations; the animation of a slide; text of a master's placeholders (it is the prompt, "Click to edit", and not content); the text of earlier edits that the last one no longer points to (decided on 2026-11-22: left out of this release).
+
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).
 
 ## 8. Risks

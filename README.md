@@ -5,10 +5,9 @@ Extracts the binary Office formats (Word `.doc`, Excel `.xls` and PowerPoint
 model, [`gofastcore.Document`](https://github.com/AOShei/go-fast-core).
 Standard library and go-fast modules only.
 
-**Status: in development, nothing released.** Excel workbooks and Word
-documents are read. Of a presentation the properties are read, and the
-slides not yet: the one part of the document says so, with `part.failed`.
-Encrypted files are refused for now.
+**Status: in development, nothing released.** Excel workbooks, Word
+documents and PowerPoint presentations are read. Encrypted files are refused
+for now.
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) has the plan, phase by
 phase, and what each phase found.
 
@@ -17,7 +16,7 @@ phase, and what each phase found.
 | Excel 97-2003 (BIFF8), Excel 5/95 (BIFF5) | `.xls`, `.xlt`, `.xla` | `xls` | read |
 | Word 97-2003 | `.doc`, `.dot` | `doc` | read |
 | Word 6/95 | `.doc` | `doc` | text, headings, tables, footnotes; no lists, hidden text or tracked changes |
-| PowerPoint 97-2003 | `.ppt`, `.pps`, `.pot` | `ppt` | properties; slides, macros and embedded files not read yet |
+| PowerPoint 97-2003 | `.ppt`, `.pps`, `.pot` | `ppt` | read |
 
 What is read today:
 
@@ -47,6 +46,25 @@ What is read today:
   anchors; text boxes at their anchors; pictures; document variables in the
   stored part. With `Options.Spans`: bold, italic, underline, strike-through,
   super- and subscript. Declared: `hidden` for hidden text and hidden shapes.
+- **Presentations**: one `slide` part per slide, in the order of the show,
+  with the size of a slide in points and the place of every block on it
+  (`Loc.BBox`). The title is a `heading` and the part's name; the body's
+  paragraphs are list items with their level and their bullet or number, as
+  the slide's master and the paragraph say; text boxes are paragraphs; a
+  table is a `table`; pictures are `image` blocks; speaker's notes and
+  comments are `note` blocks. What a master puts on every slide that follows
+  it (its own text and pictures, and the date, the footer and the number of
+  the slide where the presentation says they are shown) is given with each
+  slide, as `header` and `footer`. The order is go-fast-ooxml's: the title,
+  then from the top down and from the left across. A Microsoft Graph chart is
+  read with the slide that shows it, from its datasheet, as a chart's table.
+  With `Options.Spans`, links. Declared: `hidden` for a slide left out of the
+  show and for a hidden shape. The presentation is what its last edit left
+  of it; slides are read in parallel. A file saved for PowerPoint 95 and 97
+  both is read from the PowerPoint 97 copy it holds. Not read: sound and
+  video, the equations of the equation editor (listed as embedded files),
+  and tables that are embedded Word or Excel objects (read as embedded
+  files).
 - **Properties** (`Metadata`), from the two property-set streams: title,
   subject, author, keywords, dates, application; comments, template, last
   author, revision, category, manager, company and the program's version in
@@ -66,7 +84,7 @@ What is read today:
 
 The format is decided from the file, never from its name: all three are
 compound files, told apart by the streams they hold. Excel 2 to 4, Word 2 and
-older and PowerPoint 95 and older are not to be read; neither is a file of
+older and PowerPoint 95 and older are not read; neither is a file of
 another format under one of these names (RTF, HTML, a zip package). Each is
 refused with a message that says which it is.
 
@@ -78,6 +96,7 @@ refused with a message that says which it is.
 | `cmd/gofastmsbin` | The command: JSON, Markdown or text for files and directories |
 | `internal/xls` | The Excel reader: records, shared strings, cell formats, sheets, formulas, lists, shapes, charts |
 | `internal/doc` | The Word reader: pieces, properties, styles, lists, tables, notes, fields, text boxes, pictures; Word 6/95 |
+| `internal/ppt` | The PowerPoint reader: edits and the persist directory, masters and their text styles, slides, shapes, text, notes, comments |
 | `internal/hidden` | Spans and what is declared about the display of text, settled on a block |
 | `internal/ptg` | Compiled formulas back to text |
 | `internal/officeart`, `internal/media` | The drawing layer the three formats share: shapes, their properties, pictures |
@@ -108,6 +127,8 @@ python3 testdata/oracle_lo.py testdata testdata/corpus/twins-xls --twin       # 
 python3 testdata/oracle_lo.py testdata testdata/corpus/twins-doc --twin --format doc
 python3 testdata/oracle_lo.py testdata testdata/corpus/oracle-lo-doc --text --format doc
 go test -run 'TestDocTwins|TestDocTextAgainstLibreOffice' -v .
+python3 testdata/oracle_lo.py testdata testdata/corpus/twins-ppt --twin --format ppt
+go test -run TestPptTwins -v .
 go test -run 'TestCellsAgainstXlrd|TestShownAgainstLibreOffice|TestTwins|TestFormulasAgainstTwins' -v .
 go test -run '^$' -bench Large .                                               # needs bench/baseline.py generate
 go run ./cmd/gofastmsbin file.doc

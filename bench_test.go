@@ -40,3 +40,6 @@ func BenchmarkLargeXLS(b *testing.B)          { benchLarge(b, "large.xls", 0) }
 func BenchmarkLargeXLSOneWorker(b *testing.B) { benchLarge(b, "large.xls", 1) }
 
 func BenchmarkLargeDOC(b *testing.B) { benchLarge(b, "large.doc", 0) }
+
+func BenchmarkLargePPT(b *testing.B)          { benchLarge(b, "large.ppt", 0) }
+func BenchmarkLargePPTOneWorker(b *testing.B) { benchLarge(b, "large.ppt", 1) }

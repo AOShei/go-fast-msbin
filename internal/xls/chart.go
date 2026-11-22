@@ -1,8 +1,11 @@
 package xls
 
 import (
+	"github.com/AOShei/go-fast-msbin/internal/codepage"
 	"math"
+	"sort"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin/internal/chart"
@@ -43,6 +46,15 @@ const (
 	recChAuxErrBar  = 0x105B // the series is the error bars of another
 	recChBopPop     = 0x1061 // a pie with a second plot of some of its slices
 	recChSIIndex    = 0x1065 // which of a series' data the values after it are
+)
+
+// The records of the datasheet of a Microsoft Graph chart, and the
+// bounds on it.
+const (
+	recGraphNumber = 0x0003
+	recGraphLabel  = 0x0004
+	maxGraphRows   = 4000
+	maxGraphCols   = 4000
 )
 
 // cached is a value a chart keeps of the cells it was drawn from.
@@ -126,6 +138,7 @@ func (sh *sheet) readChart() *chart.Chart {
 	// The values kept, by kind (1 values, 2 categories, 3 bubble sizes),
 	// then by series, then by point.
 	var cache [4]map[uint16][]cached
+	var datasheet map[[2]uint16]cached // the cells of a Microsoft Graph chart's datasheet
 	total := 0
 	index := 0 // the kind the values being read are of
 	// The records that the groups being read belong to.
@@ -152,6 +165,45 @@ func (sh *sheet) readChart() *chart.Chart {
 		}
 		b := c.b
 		switch typ {
+		case recGraphNumber, recGraphLabel:
+			// A cell of the datasheet of a Microsoft Graph chart, which
+			// keeps its data in a sheet of its own ([MS-OGRAPH]): its row
+			// and column, three bytes of format, and a number, or a text
+			// with its length and whether it is in 16 bits.
+			if len(b) < 8 || len(datasheet) >= warn.MaxChartTotal {
+				break
+			}
+			at := [2]uint16{le.Uint16(b), le.Uint16(b[2:])}
+			if at[0] > maxGraphRows || at[1] > maxGraphCols {
+				break
+			}
+			if datasheet == nil {
+				datasheet = map[[2]uint16]cached{}
+			}
+			if typ == recGraphNumber {
+				if len(b) >= 15 {
+					datasheet[at] = cached{num: math.Float64frombits(le.Uint64(b[7:])), isNum: true, set: true}
+				}
+				break
+			}
+			if len(b) < 9 {
+				break
+			}
+			raw := b[9:]
+			var text string
+			if b[8]&1 != 0 {
+				raw = raw[:min(2*int(b[7]), len(raw)&^1)]
+				u := make([]uint16, len(raw)/2)
+				for i := range u {
+					u[i] = le.Uint16(raw[2*i:])
+				}
+				text = string(utf16.Decode(u))
+			} else {
+				text, _ = codepage.Decode(sh.b.cp, raw[:min(int(b[7]), len(raw))])
+			}
+			text, removed := clean.String([]byte(text), clean.Prose)
+			sh.removed += removed
+			datasheet[at] = cached{text: text, set: true}
 		case recBOF:
 			depth++
 			continue
@@ -403,6 +455,51 @@ func (sh *sheet) readChart() *chart.Chart {
 			points = cache[2][0] // the series share the categories of the first
 		}
 		return show(points, format)
+	}
+	if len(datasheet) > 0 {
+		// A Microsoft Graph chart: its datasheet is its data. The first
+		// row names what runs across, the first column what runs down;
+		// each row below the first is given as a series.
+		rows, cols := map[uint16]bool{}, map[uint16]bool{}
+		for at := range datasheet {
+			if at[0] > 0 {
+				rows[at[0]] = true
+			}
+			if at[1] > 0 {
+				cols[at[1]] = true
+			}
+		}
+		order := func(set map[uint16]bool) []uint16 {
+			out := make([]uint16, 0, len(set))
+			for v := range set {
+				out = append(out, v)
+			}
+			sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+			return out
+		}
+		across := order(cols)
+		if len(across) > chart.MaxPoints {
+			sh.lost.Add(warn.CapChartPoints, int64(len(across)-chart.MaxPoints))
+			across = across[:chart.MaxPoints]
+		}
+		cell := func(r, c uint16) string {
+			if v := show([]cached{datasheet[[2]uint16{r, c}]}, 0); len(v) == 1 {
+				return v[0]
+			}
+			return ""
+		}
+		cats := make([]string, len(across))
+		for i, c := range across {
+			cats[i] = cell(0, c)
+		}
+		for _, r := range order(rows) {
+			vals := make([]string, len(across))
+			for i, c := range across {
+				vals[i] = cell(r, c)
+			}
+			out.Series = append(out.Series, chart.Series{Name: cell(r, 0), Cats: cats, Vals: [][]string{vals}})
+		}
+		return &out
 	}
 	for i, s := range series {
 		if s.aux {

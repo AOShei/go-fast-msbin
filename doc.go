@@ -4,10 +4,10 @@
 // to 2003 wrote them, with their templates and shows. Their
 // gofastcore.Source.Format is doc, xls and ppt.
 //
-// The library is in development: it tells the three formats apart, their
-// generations and whether a file is encrypted, and reads none of them
-// yet. Every file is refused with an error that wraps
-// gofastcore.ErrUnsupported and says what the file is. IMPLEMENTATION_PLAN.md
+// The library is in development. A file of any of the three formats gives
+// a document with its properties, the source of its macros (in the stored
+// part) and its embedded files (Children); the text is not read yet, and
+// the document's part says so with part.failed. IMPLEMENTATION_PLAN.md
 // says what is to come, phase by phase.
 //
 // The format is decided from the file, never from its name: all three are

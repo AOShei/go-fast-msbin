@@ -43,6 +43,19 @@ func FuzzExtract(f *testing.F) {
 	f.Add(msbintest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Current User": currentUser(0xF3D1C4DF, 0x03F4)}))
 	f.Add(msbintest.CompoundV4(map[string][]byte{"Book": record(0x0809, u16s(0x0500, 5, 0, 0)...), "a/b": make([]byte, 5000)}))
 	f.Add([]byte(`{\rtf1 }`))
+	// Properties, macros and embedded objects of every shape.
+	shared := with(wordFile(), msbintest.VBAStreams("Macros/", 1252, msbintest.VBAModule{Name: "M", Code: "Sub A()\r\nEnd Sub\r\n"}))
+	shared["\x05SummaryInformation"] = msbintest.PropertyStream(msbintest.Section{Format: msbintest.FmtSummary, CodePage: 1252,
+		Props: []msbintest.Prop{{ID: 2, Value: "title"}, {ID: 12, Value: time.Unix(1e9, 0)}}})
+	shared["\x05DocumentSummaryInformation"] = msbintest.PropertyStream(
+		msbintest.Section{Format: msbintest.FmtDocSummary, CodePage: 1200, Props: []msbintest.Prop{{ID: 15, Value: msbintest.Wide("co")}}},
+		msbintest.Section{Format: msbintest.FmtUser, CodePage: 932, Props: []msbintest.Prop{{ID: 2, Name: "n", Value: true}}})
+	shared["ObjectPool/_1/\x01Ole10Native"] = packaged("a.txt", `C:\a.txt`, []byte("text"))
+	shared["ObjectPool/_2/Package"] = []byte("PK\x03\x04")
+	shared["ObjectPool/_3/Workbook"] = bookFile()["Workbook"]
+	shared["ObjectPool/_3/MBD00000001/WordDocument"] = wordFile()["WordDocument"]
+	shared["ObjectPool/_4/\x01Ole"] = []byte{1, 0, 0, 2, 1, 0, 0, 0}
+	f.Add(msbintest.Compound(shared))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > 1<<20 {
 			return
@@ -52,6 +65,11 @@ func FuzzExtract(f *testing.F) {
 		timer := time.AfterFunc(5*time.Second, func() { panic("Extract took more than 5s") })
 		defer timer.Stop()
 		doc, err := extract(data, nil)
+		checkOutcome(t, doc, err)
+		// With a child extractor the embedded files are read too, each
+		// by this library where it is of these formats.
+		var seen []string
+		doc, err = extract(data, &gofastcore.Options{Child: self(&seen), Images: gofastcore.ImagesData, Spans: true, Cells: true})
 		checkOutcome(t, doc, err)
 	})
 }

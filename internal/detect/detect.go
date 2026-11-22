@@ -18,6 +18,19 @@ const (
 	Ppt = "ppt"
 )
 
+// MIME gives the media type of a format.
+func MIME(format string) string {
+	switch format {
+	case Doc:
+		return "application/msword"
+	case Xls:
+		return "application/vnd.ms-excel"
+	case Ppt:
+		return "application/vnd.ms-powerpoint"
+	}
+	return ""
+}
+
 // Info is what a file says about itself.
 type Info struct {
 	// Format is doc, xls or ppt, or empty for a file that is none of them.

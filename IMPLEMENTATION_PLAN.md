@@ -187,7 +187,7 @@ Test runs go under `systemd-run --user --scope -p MemoryMax=8G`, with a ceiling 
 
 ## 7. Phases
 
-Sizes are relative: S (days), M (about a week), L (several weeks). Each phase is one branch and one PR against `main`, ends with a report and a stop, and starts only on a go-ahead.
+Sizes are relative: S (days), M (about a week), L (several weeks). Each phase is one branch and one PR against `main`. On 2026-11-22 Andrew gave the go-ahead for all phases ("only stop when my input or critical decisions are required") and accepted the speed targets of Phase 0, to be tested and adapted on the way.
 
 | Phase | Delivers | Size |
 |---|---|---|
@@ -241,6 +241,30 @@ Found on the way:
 - **The container reader is stricter than olefile.** Of 26 development files it refuses as damaged, olefile opens 12: a directory chain that runs off the file, a wrong byte-order mark, a directory with no root entry. Phase 1 decides how much of that to read with `input.repaired`.
 - **The fuzzers ran** 18 million executions on the container and 16 million on `Extract` without a finding.
 - The accuracy targets wait for the first reader: there is nothing to score yet.
+
+### Phase 1: result (2026-11-22)
+
+Done, on branch `phase-1-shared`. A file of any of the three formats gives a document: its properties, the source of its macros, its embedded files, and one part that says the text is not read yet (`part.failed`). Encrypted files are refused until Phase 7.
+
+- **Properties** (`internal/oleps`, `meta.go`): both property-set streams, every value type, text in the code page the set names (and UTF-16), the dictionary of custom properties. Keys in `Extra` are go-fast-ooxml's (`description`, `last_modified_by`, `revision`, `template`, `category`, `manager`, `company`, `app_version`, `content_status`, `custom.<name>`). Bounds: 64 KiB a value, 256 custom properties, 4,096 properties a set.
+- **Macros** (`internal/vba`, `internal/stored`): a project is found in `Macros` (Word), `_VBA_PROJECT_CUR` (Excel) or any storage at the root; each module is a `code` block in the stored part.
+- **Embedded files** (`internal/embed`): Word's `ObjectPool` storages and a workbook's `MBD…` storages. A file in a stream (`\x01Ole10Native`, `Package`, `CONTENTS`) is handed on as it is, a packaged file under its own name; any other storage is written out as a compound file. A linked object is `input.external_reference`. What is handed on counts against the decode budget, which the document and its children share.
+- **The stream interface** (`unit.Stream`) is what the readers take their input through; the cipher of Phase 7 goes under it.
+- **`Open` and `File`** read a part at a time, and the **command** writes JSON a part at a time, byte for byte what the whole document gives (checked over the corpus). Both arrived here rather than in Phase 8, because the reading of parts in order and in parallel was copied whole from go-fast-ooxml; Phase 8 finishes and documents them.
+- **Damaged containers.** A wrong byte-order mark and a directory whose chain of sectors breaks or loops are read past, with `input.repaired`: 12 of the 26 development files that were refused are now read, one of them a published presentation. The 14 still refused have no root entry, no sound directory sector, or a header that contradicts itself.
+
+**Measured** over the corpus:
+
+| | |
+|---|---|
+| Properties against olefile | 99.7 % of the values of 14 fields agree (14,712 of 14,750); the differences are in fuzzed files, whose streams break off, and in dates in the year 1601, which olefile leaves out |
+| Macro modules against olevba | 839 of 843 given; the four are modules of damaged projects and p-code that olevba disassembles |
+| Corpus | 2,528 files: every one a valid document or a shared error; 1,030 with a title, 145 with macros (840 modules), 90 with embedded files (575 files, 131 of them documents of these formats), 18 repaired |
+
+Found on the way:
+
+- **Word for the Macintosh** writes the identifier of a property set with its fields in the other byte order, and its text in Mac Roman. Both are read.
+- **A presentation's macros and embedded files** are not storages of the file: they are in records of the `PowerPoint Document` stream, compressed. They come with Phase 6.
 
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).
 

@@ -9,3 +9,9 @@ and what each found.
   a writer of compound files, the telling apart of formats, generations and
   encryption, the test corpus and the baselines of today's tools. Every file
   is still refused with `ErrUnsupported`.
+- Phase 1: what the three formats share. A file gives a document with its
+  properties (`Metadata`), the source of its VBA modules (stored part) and
+  its embedded files (`Children`); the text is not read yet, and the part
+  says so. `Open` and `File` read a part at a time; the `gofastmsbin`
+  command prints JSON, Markdown or text. A compound file with a wrong
+  byte-order mark or a broken directory chain is read as far as it is sound.

@@ -15,6 +15,7 @@ const (
 	ControlCharsRemoved = "msbin.control_characters_removed"
 	PropertiesDamaged   = "msbin.properties_damaged"
 	PartDamaged         = "msbin.part_damaged"
+	RegionSplit         = "msbin.region_split"
 )
 
 // ErrText is what a reader ends with when the document has taken all the

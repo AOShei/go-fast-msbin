@@ -56,6 +56,12 @@ func FuzzExtract(f *testing.F) {
 	shared["ObjectPool/_3/MBD00000001/WordDocument"] = wordFile()["WordDocument"]
 	shared["ObjectPool/_4/\x01Ole"] = []byte{1, 0, 0, 2, 1, 0, 0, 0}
 	f.Add(msbintest.Compound(shared))
+	// A workbook, with macros beside it.
+	workbook := msbintest.VBAStreams("_VBA_PROJECT_CUR/", 1252, msbintest.VBAModule{Name: "M", Code: "Sub A()\r\nEnd Sub\r\n"})
+	workbook["Workbook"] = msbintest.Workbook(append(append([][]byte(nil), styles...), msbintest.SST(msbintest.Plain("a", "b")...)),
+		msbintest.Sheet{Name: "S", Records: [][]byte{msbintest.LabelSST(0, 0, xfGeneral, 0), msbintest.MulRK(0, 1, xfTwo, 1, 2), msbintest.Comment(0, 0, 1, "A", "note")}},
+		msbintest.Sheet{Name: "T", State: 2, Records: [][]byte{msbintest.Number(0, 0, xfDate, 36526)}})
+	f.Add(msbintest.Compound(workbook))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > 1<<20 {
 			return
@@ -71,5 +77,47 @@ func FuzzExtract(f *testing.F) {
 		var seen []string
 		doc, err = extract(data, &gofastcore.Options{Child: self(&seen), Images: gofastcore.ImagesData, Spans: true, Cells: true})
 		checkOutcome(t, doc, err)
+	})
+}
+
+// FuzzWorkbook feeds arbitrary bytes to the Excel reader as a workbook
+// stream, so that the fuzzer works on the records and not on the
+// container around them.
+func FuzzWorkbook(f *testing.F) {
+	sst := msbintest.SST(msbintest.SSTString{Text: "one"}, msbintest.SSTString{Text: "two ✓", Runs: [][2]uint16{{1, 5}}},
+		msbintest.SSTString{Text: "three", Phonetic: []byte{1, 2, 3}})
+	recs := [][]byte{msbintest.Dimensions(3, 3), msbintest.Row(0, true), msbintest.ColInfo(1, 2, true),
+		msbintest.LabelSST(0, 0, xfGeneral, 0), msbintest.LabelSST(0, 1, xfSymbol, 1), msbintest.MulRK(1, 0, xfTwo, 1, 2),
+		msbintest.Number(1, 2, xfDate, 36526.5), msbintest.Bool(1, 3, xfGeneral, true), msbintest.Error(1, 4, xfGeneral, 7),
+		msbintest.FormulaString(2, 0, xfQuoted, "text"), msbintest.Label(2, 1, xfWingdings, "abc"),
+		msbintest.MergeCells([4]uint16{0, 1, 0, 0}), msbintest.HLinkURL([4]uint16{0, 0, 0, 0}, "https://example.com", "x"),
+		msbintest.HLinkFile([4]uint16{1, 1, 0, 0}, 1, `a\b.xls`), msbintest.HLinkPlace([4]uint16{2, 2, 0, 0}, "S!A1"),
+		msbintest.Comment(0, 0, 1, "A", "note")}
+	globals := append(append([][]byte(nil), styles...), sst)
+	f.Add(msbintest.Workbook(globals, msbintest.Sheet{Name: "S", Records: recs}, msbintest.Sheet{Name: "T", State: 1, Records: recs},
+		msbintest.Sheet{Name: "C", Kind: 2}, msbintest.Sheet{Name: "M", Kind: 1, Records: recs}))
+	f.Add(msbintest.Workbook(nil))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) > 1<<20 {
+			return
+		}
+		timer := time.AfterFunc(5*time.Second, func() { panic("Extract took more than 5s") })
+		defer timer.Stop()
+		file := msbintest.BookFile(data)
+		doc, err := extract(file, &gofastcore.Options{Spans: true, Cells: true})
+		checkOutcome(t, doc, err)
+		// The same document whatever the number of sheets read at a
+		// time, also where a limit cuts it.
+		for _, limits := range []gofastcore.Limits{{}, {MaxTextBytes: 300}} {
+			one, err1 := extract(file, &gofastcore.Options{Workers: 1, Limits: limits})
+			many, err2 := extract(file, &gofastcore.Options{Workers: 4, Limits: limits})
+			checkOutcome(t, one, err1)
+			if (err1 == nil) != (err2 == nil) {
+				t.Fatalf("one worker: %v; four: %v", err1, err2)
+			}
+			if err1 == nil && one.Text() != many.Text() {
+				t.Fatal("four workers give another text than one")
+			}
+		}
 	})
 }

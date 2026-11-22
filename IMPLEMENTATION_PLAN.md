@@ -266,6 +266,37 @@ Found on the way:
 - **Word for the Macintosh** writes the identifier of a property set with its fields in the other byte order, and its text in Mac Roman. Both are read.
 - **A presentation's macros and embedded files** are not storages of the file: they are in records of the `PowerPoint Document` stream, compressed. They come with Phase 6.
 
+### Phase 2: result (2026-11-22)
+
+Done, on branch `phase-2-excel-cells`. A workbook of Excel 97 to 2003 is read: one `sheet` part per sheet, its cells as tables.
+
+- **The reader** (`internal/xls`): the globals (date system, fonts, number formats, cell formats, the list of sheets, the shared strings with their CONTINUE records), and for each sheet every cell record (shared and inline strings, numbers in their three encodings, truth values, errors, formulas with results of each kind), rows and columns the sheet hides, merged cells, comments, hyperlinks. The workbook stream is read into memory once; the sheets are read from it in parallel.
+- **Tables** (`internal/grid`) are found by go-fast-ooxml's code, made a package: the same regions, the same splitting of sparse areas and of tables over a million cells, the same order.
+- **As shown**: numbers through the copied number-format engine, dates in ISO 8601 in both date systems, text through the text section of its format. Text in a symbol font is translated; a string that changes font partway is translated run by run.
+- **With `Options.Cells`**: the type of each value, and the stored value where the text does not show it in full. Formula text comes in Phase 3. **With `Options.Spans`**: hyperlinks, to an address, a file or a place in the workbook.
+- **Declared**: `hidden` for a hidden or very hidden sheet, hidden rows and columns, and a value its format shows as nothing.
+- **Limits**: `Extractor.MaxCells` (20 million by default) and `Limits.MaxTextBytes` cut a workbook at the same place whatever the number of workers; a sheet holds at most 65,536 rows.
+- Chart sheets and dialog sheets are counted as `msbin.unread_content`; a macro sheet's cells are read and it is `input.active_content`; the modules of the VBA project that the workbook lists as sheets are not parts.
+
+**Measured:**
+
+| | |
+|---|---|
+| Cells against xlrd, 1,047 workbooks | 12,148,649 agree; 10 differ; 205 are zeros their format shows as nothing; 520 are text in a symbol font, which xlrd gives as codes |
+| Cells as shown against LibreOffice, 1,071 workbooks | 12,828,242 of 12,867,728 agree (99.69 %); dates are not compared. LibreOffice recalculates formulas on loading, which is most of the rest |
+| `large.xls`, 1,966,080 cells | 0.08 s with all workers, 0.15 s with one (target 0.22 s and 0.5 s; calamine 0.22 s, xlrd 1.09 s, LibreOffice 3.0 s) |
+| Memory for `large.xls` | 168 MB allocated in all by `Extract`; the command peaks at 155 MB writing text and 313 MB writing JSON, where the one sheet is encoded in one piece (target 215 MB: met for the library, not for the command's JSON) |
+| Workbooks read | 1,055 of the 1,111 in the corpus; 16 more are Excel 5/95 (Phase 3) and 9 are encrypted (Phase 7). calamine reads 1,064 |
+| Same output for 1 and 5 workers | every workbook of the corpus, with and without a limit |
+| Fuzzing | `FuzzWorkbook` 9 million executions and `FuzzExtract` 15 million more, no finding |
+
+Found on the way:
+
+- **Symbol fonts in part of a cell.** A cell whose font is Symbol for its bullet and Arial for its words is common in published workbooks. Translating the whole cell by the cell's font turned the words into Greek; the fonts of the runs are now kept for workbooks that have a symbol font. go-fast-ooxml translates a whole cell by its font, and may have the same fault with `.xlsx`: for its owner to check.
+- **The number-format engine and LibreOffice differ in two ways**, in code this library copies from go-fast-ooxml unchanged: a value that rounds to zero is shown through the negative section here and through the zero section there (`(0.00)` for -4.5e-13); and the last of fifteen digits of a General number is rounded from the binary value here and from its shortest decimal there (6,054 cells of 12.9 million). Both are for the engine's owner; nothing is changed here, so that the two libraries keep agreeing.
+- **A formula record under its older number** (0x0206, 0x0406) appears in workbooks of this generation written by other programs, and is read.
+- **Defined names** move to Phase 3: a name's value is a formula, and reading formulas back as text is that phase's.
+
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).
 
 ## 8. Risks

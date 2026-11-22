@@ -11,6 +11,9 @@ import (
 	"github.com/AOShei/go-fast-msbin/internal/cfb"
 )
 
+// BIFF8 is the version of a workbook of Excel 97 to 2003.
+const BIFF8 = "Excel 97-2003 (BIFF8)"
+
 // Formats, as gofastcore.Source.Format has them.
 const (
 	Doc = "doc"
@@ -162,10 +165,12 @@ func excel(f *cfb.File, name string) Info {
 	}
 	switch typ := le.Uint16(b); typ {
 	case 0x0809:
-		switch le.Uint16(b[4:]) {
-		case 0x0600:
-			in.Version, in.Read = "Excel 97-2003 (BIFF8)", true
-		case 0x0500:
+		// The version's high byte says which generation; some programs
+		// set bits of the low one.
+		switch le.Uint16(b[4:]) >> 8 {
+		case 0x06:
+			in.Version, in.Read = BIFF8, true
+		case 0x05:
 			in.Version, in.Read = "Excel 5/95 (BIFF5)", true
 		}
 	case 0x0409:

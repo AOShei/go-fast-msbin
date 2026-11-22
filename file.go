@@ -20,6 +20,7 @@ import (
 	"github.com/AOShei/go-fast-msbin/internal/stored"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
+	"github.com/AOShei/go-fast-msbin/internal/xls"
 )
 
 // File is a Word, Excel or PowerPoint file opened for reading a part at a
@@ -49,6 +50,7 @@ type File struct {
 	opened   []gofastcore.Warning // warnings about the document known when it was opened
 	projects [][]string           // the storages that hold a VBA project
 	objects  []embed.Object       // the embedded objects
+	book     []byte               // a workbook's stream of records
 	parts    int
 	stored   int // the index of the stored part, or -1
 	noun     string
@@ -170,6 +172,9 @@ func (e *Extractor) open(ctx context.Context, r io.ReaderAt, size int64, opts *g
 	if past > 0 {
 		warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, warnCap(past))
 	}
+	if err := f.load(); err != nil {
+		return nil, err
+	}
 	sess, err := f.reader()
 	if err != nil {
 		return nil, err
@@ -193,7 +198,39 @@ func (f *File) stream(name string) (unit.Stream, error) {
 // goes through the same steps as the first, so that it meets every limit
 // where the first did.
 func (f *File) reader() (*session, error) {
+	if f.book != nil {
+		cfg := xls.Config{MaxCells: gofastcore.ResolveLimit(f.e.MaxCells, DefaultMaxCells), HasStored: len(f.projects) > 0,
+			Stored: func(ctx context.Context, part *stored.Part) { stored.Macros(ctx, f.cf, f.projects, part) }}
+		return &session{src: xls.Open(f.book, &f.opts, cfg)}, nil
+	}
 	return &session{src: &pending{f: f, version: f.info.Version}}, nil
+}
+
+// load reads into memory the stream the reader of the file's format
+// reads whole: a workbook's records. The stream is no larger than the
+// file, which Limits.MaxInputBytes bounds.
+func (f *File) load() error {
+	if f.info.Format != detect.Xls || f.info.Version != detect.BIFF8 {
+		return nil
+	}
+	name := "Workbook"
+	if !f.cf.Has(name) {
+		name = "Book"
+	}
+	s, err := f.stream(name)
+	if err != nil {
+		return fmt.Errorf("gofastmsbin: the workbook's stream cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
+	}
+	data, _, err := unit.ReadAll(s, s.Size())
+	if err != nil && len(data) == 0 {
+		return fmt.Errorf("gofastmsbin: the workbook's stream cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
+	}
+	if err != nil {
+		f.opened = append(f.opened, gofastcore.Warning{Code: gofastcore.WarnInputRepaired, Severity: gofastcore.SeverityWarning,
+			Message: fmt.Sprintf("the workbook's stream breaks off after %d of %d bytes; what was read of it is used", len(data), s.Size())})
+	}
+	f.book = data
+	return nil
 }
 
 // Close closes the file if Open opened it. The File must not be used

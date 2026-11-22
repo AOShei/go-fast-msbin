@@ -28,6 +28,14 @@ const (
 	CapObjectDepth
 	CapAddress
 	CapName
+	// Excel.
+	CapSheets
+	CapSheetCols
+	CapComments
+	CapLinks
+	CapMerges
+	CapCellStyles
+	CapNumberFormats
 	numCaps
 )
 
@@ -50,6 +58,14 @@ var caps = [numCaps]capInfo{
 	CapObjectDepth:   {"embedded objects whose storages nest more than " + itoa(MaxObjectDepth) + " deep were listed and not handed on", "object", "objects"},
 	CapAddress:       {"addresses longer than " + itoa(MaxAddress) + " bytes were cut there", "address", "addresses"},
 	CapName:          {"names longer than " + itoa(MaxName) + " bytes were cut there", "name", "names"},
+
+	CapSheets:        {"sheets past " + itoa(MaxSheets) + " were not read", "sheet", "sheets"},
+	CapSheetCols:     {"cells past column " + itoa(MaxCols) + " of the sheet were not read", "cell", "cells"},
+	CapComments:      {"comments of a sheet past " + itoa(MaxComments) + " were not read", "comment", "comments"},
+	CapLinks:         {"hyperlinks of a sheet past " + itoa(MaxLinks) + " were not read", "hyperlink", "hyperlinks"},
+	CapMerges:        {"merged ranges of a sheet past " + itoa(MaxMerges) + " were not read; their cells are given unmerged", "range", "ranges"},
+	CapCellStyles:    {"cell formats and fonts of the workbook past " + itoa(MaxCellStyles) + " were not read; cells that use them show their values unformatted", "format", "formats"},
+	CapNumberFormats: {"number formats of the workbook past " + itoa(MaxNumberFormats) + " were not read; cells that use them show their values unformatted", "format", "formats"},
 }
 
 // The bounds, where the code that keeps to them and the messages above
@@ -66,6 +82,13 @@ const (
 	MaxObjectDepth   = 64
 	MaxAddress       = clean.MaxAddress
 	MaxName          = clean.MaxLabel
+	MaxSheets        = 1 << 16
+	MaxCols          = 1 << 14
+	MaxComments      = 1 << 18
+	MaxLinks         = 1 << 18
+	MaxMerges        = 1 << 18
+	MaxCellStyles    = 1 << 17
+	MaxNumberFormats = 1 << 13
 )
 
 // Message is the text of the warning for n items a bound left out.

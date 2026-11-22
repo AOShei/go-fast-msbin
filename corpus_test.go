@@ -85,13 +85,6 @@ func TestCorpus(t *testing.T) {
 			kind = "published  "
 		}
 		what := outcome(err)
-		if doc != nil && len(doc.Parts) > 0 {
-			// A format whose reader is not written yet gives its
-			// properties, macros and embedded files only.
-			if w, ok := warning(doc.Parts[0].Warnings, gofastcore.WarnPartFailed); ok && strings.Contains(w.Message, "not read by this version") {
-				what = "properties only: content not read yet"
-			}
-		}
 		counts[kind+"\t"+e.Format+"\t"+what]++
 	}
 	keys := make([]string, 0, len(counts))

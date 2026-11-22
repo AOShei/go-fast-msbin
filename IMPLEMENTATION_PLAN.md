@@ -437,6 +437,48 @@ On branch `phase-8-api-command`. Most of the API was written with Phase 1 (`Open
 - **The exported declarations** are held to `testdata/api.txt` (`TestAPISnapshot`, from go-fast-ooxml): 5 warning codes, 3 defaults, `Extract`, `ExtractFile`, `Extractor` with `MaxCells`, `File` with 11 methods, `Sheet`.
 - **Examples** for a whole file, a part at a time, and a password; the package documentation says what the library does today.
 
+### Phase 9: result (2026-11-22)
+
+On branch `phase-9-hardening`. Nothing new is read; the release is made ready.
+
+- **Soak** (`TestSoak`): every one of the 2,528 files of the corpus, the exploit files of LibreOffice's and POI's test suites among them, read four ways: one sheet or slide at a time with spans and cell details; eight at a time, the same; with a limit of 4,096 bytes of text; with the bytes of the pictures within a megabyte decoded. Every result is a valid document or one of the shared errors; the document is the same with one worker and with eight, byte for byte as JSON; no document holds more text than its limit; the test fails if the heap passes 3 GiB.
+- **Worst cases bounded**, found by reading the PowerPoint reader for what a file can repeat: the check for a master holding the same thing twice was quadratic in its shapes (now a set); a slide's texts in the outline were searched from the start for every shape (now found once); a master's text that comes to nothing on a slide cost nothing, on every slide (now charged to the text the document may hold); a chart's file was read again for every shape that shows it without charge (now charged to the bytes the document may decode); the datasheet of a chart is cut to what a chart may hold. `TestPresentationWorstCases` holds two of them.
+- **Allocation budgets** (`TestAllocationBudgets`): what one reading of each large file allocates, held to about a quarter over what was measured.
+- **Readers reach nothing** (`TestReadersReachNothing`): the packages that read what a file holds import neither `os` nor `net` nor `os/exec`.
+- **`SECURITY.md`**: what a file cannot do, every limit with its default, what the caller decides. **`CHANGELOG.md`** as the notes of the release. The placeholder reader of the early phases is gone.
+
+**Measured:**
+
+| | |
+|---|---|
+| Soak | 2,528 files, 2,427 documents, each read four ways in 25 to 38 s in all; 1,281 cut by the text limit; the slowest file 1.3 to 1.8 s for its four readings; heap peak 482 MiB |
+| Files read with no password | 868 of 907 `.doc`, 1,076 of 1,111 `.xls` (calamine 1,064, xlrd 1,058), 483 of 510 `.ppt`: 2,427 of 2,528. The other 101: older generations (20), a generation the file does not state (16), not files of these formats (26), damaged containers (23), and encrypted files that need a password (16, of which 12 open with the passwords their test suites give) |
+| `large.xls`, 1,966,080 cells | the library 0.10 to 0.12 s with all processors, 0.15 to 0.18 s with one (targets 0.22 s and 0.5 s; calamine 0.22 s, xlrd 1.09 s). 160 MiB allocated in 249 allocations |
+| `large.doc`, 1.5 million words | 0.06 to 0.11 s (target 0.2 s; LibreOffice 8.1 s). 59 MiB in 41,800 allocations |
+| `large.ppt`, 1,500 slides | 0.007 to 0.017 s, 0.027 to 0.061 s with one processor (target 0.1 s; LibreOffice 7.2 s). 41 MiB in 275,800 allocations |
+| The command, writing JSON, as a process | `large.xls` 0.24 to 0.37 s, 285 to 395 MB at its peak; `large.doc` 0.13 to 0.23 s, 135 to 148 MB; `large.ppt` 0.05 to 0.09 s, 29 to 37 MB |
+| Fuzz campaign, eight targets, four minutes each on eight workers | `FuzzExtract` 17 million executions, `FuzzWorkbook` 3.5 million, `FuzzWord` 13 million, `FuzzPresentation` 13 million, `FuzzCFB` 40 million, `FuzzRead` (properties) 64 million, `FuzzProject` (VBA) 61 million. `FuzzEncrypted` stopped after 235 seconds on the one finding, fixed: a ligature in a string of a defined name's formula reached the text of a block as it was. After the fix `FuzzEncrypted` ran 27 million more and `FuzzWorkbook` 5 million, with none |
+
+The times are ranges because the machine was shared and busy (a load of 9 to 22 on 24 threads while they were taken); the lower ends are from the quieter runs.
+
+- **The memory target for `large.xls` is not met.** It was 215 MB, calamine's peak as a process. The command peaks at 285 to 395 MB. The live heap is 105 to 130 MB (the workbook's stream, 38 MB, which is held whole; the shared strings; one sheet's cells and its table; the JSON of one part); the rest is the room Go's collector leaves, which a caller can set (`GOMEMLIMIT`, `GOGC`). Reading the stream in pieces instead of holding it would take about 38 MB off, and is a change to how all three readers read; it is not made for this release.
+- **The time targets are met** by the library. The command, which also writes the document as JSON, takes two to three times as long as the library for the workbook.
+
+**For go-fast-core's README** (proposed; not changed here, the file is another repository's):
+
+- In the list of extractors: add `go-fast-msbin`.
+- In "How each format maps": `doc (go-fast-msbin)` beside docx, `ppt (go-fast-msbin)` beside pptx, `xls (go-fast-msbin)` beside xlsx. The notes of those rows hold as they are: the binary formats are mapped as their successors are. `Loc.Anchor` in a `.doc` is the bookmark that starts the paragraph, as in rtf.
+- After the table: "go-fast-msbin reads the templates and shows of the three binary formats, the workbooks of Excel 5 and 95 and the documents of Word 6 and 95, under the names doc, xls and ppt."
+
+**Left for after the release**, as decided or found on the way:
+
+- The text of earlier saves that a file no longer points to (Q9: to be reviewed after the release).
+- Each library's owner decides whether its command routes embedded `.doc`, `.xls` and `.ppt` files here.
+- For go-fast-ooxml's owner: it translates a whole cell by its font where the format has fonts by run; its number formats pick the negative section for a value that rounds to zero, and round the fifteenth digit from the binary value.
+- Reading streams in pieces, for memory; the properties of encrypted presentations; equations; Word XOR obfuscation verified on a real file, if one is found.
+
+**To release:** merge the open pull requests in order; date the changelog (`[0.1.0] - <date>`) in a pull request of its own; tag `v0.1.0` on `main`. The tag is Andrew's.
+
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).
 
 ## 8. Risks

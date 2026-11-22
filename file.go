@@ -262,7 +262,8 @@ func (f *File) reader() (*session, error) {
 			Stored: func(ctx context.Context, part *stored.Part) { stored.Macros(ctx, f.cf, f.projects, part) }}
 		return &session{src: xls.Open(f.book, &f.opts, cfg)}, nil
 	}
-	return &session{src: &pending{f: f, version: f.info.Version}}, nil
+	// Every format that is opened has loaded its stream by now.
+	return nil, fmt.Errorf("gofastmsbin: a %s file with no stream to read: %w", f.info.Format, gofastcore.ErrMalformed)
 }
 
 // graph reads the compound file of a Microsoft Graph chart, which keeps
@@ -315,6 +316,9 @@ func (f *File) load() error {
 		if err != nil {
 			f.opened = append(f.opened, gofastcore.Warning{Code: gofastcore.WarnInputRepaired, Severity: gofastcore.SeverityWarning,
 				Message: fmt.Sprintf("the document's stream breaks off after %d of %d bytes; what was read of it is used", len(data), s.Size())})
+		}
+		if data == nil {
+			data = []byte{} // an empty stream is still the document's
 		}
 		f.word = data
 		if f.info.Encryption != "" {
@@ -402,6 +406,9 @@ func (f *File) load() error {
 	if err != nil {
 		f.opened = append(f.opened, gofastcore.Warning{Code: gofastcore.WarnInputRepaired, Severity: gofastcore.SeverityWarning,
 			Message: fmt.Sprintf("the workbook's stream breaks off after %d of %d bytes; what was read of it is used", len(data), s.Size())})
+	}
+	if data == nil {
+		data = []byte{} // an empty stream is still the workbook's
 	}
 	f.book = data
 	if f.info.Encryption != "" {

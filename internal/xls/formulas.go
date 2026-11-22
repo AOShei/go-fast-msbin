@@ -229,7 +229,7 @@ func (l *linkReader) finish(b *Book) {
 		if n.sheet >= 1 && n.sheet <= len(l.sheets) {
 			name = l.sheets[n.sheet-1] + "!" + name
 		}
-		b.names = append(b.names, definedName{name: name, formula: text})
+		b.names = append(b.names, definedName{name: name, formula: blockFormula(text)})
 	}
 }
 

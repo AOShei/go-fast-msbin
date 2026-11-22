@@ -66,6 +66,28 @@ func TestImportsStandardLibraryAndGoFastOnly(t *testing.T) {
 	}
 }
 
+// The packages that read what a file holds reach nothing outside it: they
+// do not open files, start programs or use the network. Only the entry
+// points (which open the file they are given by name), the command and
+// the test harness import those packages.
+func TestReadersReachNothing(t *testing.T) {
+	checked := 0
+	for file, paths := range imports(t, "internal") {
+		if strings.Contains(filepath.ToSlash(file), "internal/msbintest/") {
+			continue
+		}
+		checked++
+		for _, p := range paths {
+			if p == "os" || p == "os/exec" || p == "syscall" || p == "net" || strings.HasPrefix(p, "net/") || p == "plugin" || p == "unsafe" {
+				t.Errorf("%s imports %q", file, p)
+			}
+		}
+	}
+	if checked < 30 {
+		t.Fatalf("only %d files were checked", checked)
+	}
+}
+
 // Source files hold no invisible or look-alike characters: a test that
 // needs one writes it as an escape.
 func TestSourceHygiene(t *testing.T) {

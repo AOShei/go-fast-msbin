@@ -54,6 +54,10 @@ const (
 	CapPictures
 	CapChartLookup
 	CapPivotTables
+	// Word.
+	CapFieldCode
+	CapFieldDepth
+	CapTableCells
 	numCaps
 )
 
@@ -101,6 +105,9 @@ var caps = [numCaps]capInfo{
 	CapPictures:       {"pictures of the document past " + itoa(MaxPictures) + " were not read; shapes that show them are given with no picture", "picture", "pictures"},
 	CapChartLookup:    {"charts whose data is in sheets of more than " + itoa(MaxChartLookup>>20) + " MiB in all were given with what the charts keep of it, not with what the cells show", "chart", "charts"},
 	CapPivotTables:    {"pivot tables of a sheet past " + itoa(MaxPivotTables) + " were not read as tables; their cells are given as cells of the sheet", "table", "tables"},
+	CapFieldCode:      {"field codes longer than " + itoa(MaxFieldCode) + " bytes were cut there", "field", "fields"},
+	CapFieldDepth:     {"fields nested more than " + itoa(MaxFieldDepth) + " deep were read as text of the field around them; their codes were not kept", "field", "fields"},
+	CapTableCells:     {"tables of more than " + itoa(MaxTableCells) + " cells were cut there", "table", "tables"},
 	CapSharedFormulas: {"shared formulas of a sheet past " + itoa(MaxSharedFormulas) + " were not kept; cells that use them give no formula", "formula", "formulas"},
 }
 
@@ -138,6 +145,9 @@ const (
 	MaxChartTitle     = 4096
 	MaxChartTotal     = 1 << 21
 	MaxCharts         = 1 << 12
+	MaxFieldCode      = 1 << 16
+	MaxFieldDepth     = 64
+	MaxTableCells     = 1 << 22
 	MaxPivotTables    = 1 << 10
 	MaxChartLookup    = 256 << 20
 	MaxShapes         = 1 << 16

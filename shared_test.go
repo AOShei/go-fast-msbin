@@ -14,9 +14,9 @@ import (
 	"github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
 
-// wordFile is the streams of a Word file with nothing in it.
+// wordFile is the streams of a Word file of one paragraph.
 func wordFile() map[string][]byte {
-	return map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0200), "1Table": {}}
+	return msbintest.WordStreams(msbintest.DocFile{Styles: docStyles, Main: []msbintest.DocPara{{Text: "A paragraph."}}})
 }
 
 // bookFile is the streams of a workbook with nothing in it.

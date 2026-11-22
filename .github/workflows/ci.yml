@@ -57,6 +57,7 @@ jobs:
         run: |
           go test -run '^$' -fuzz '^FuzzExtract$' -fuzztime 30s -fuzzminimizetime 0s .
           go test -run '^$' -fuzz '^FuzzWorkbook$' -fuzztime 30s -fuzzminimizetime 0s .
+          go test -run '^$' -fuzz '^FuzzWord$' -fuzztime 30s -fuzzminimizetime 0s .
           go test -run '^$' -fuzz '^FuzzCFB$' -fuzztime 30s -fuzzminimizetime 0s ./internal/cfb
           go test -run '^$' -fuzz '^FuzzRead$' -fuzztime 20s -fuzzminimizetime 0s ./internal/oleps
           go test -run '^$' -fuzz '^FuzzProject$' -fuzztime 20s -fuzzminimizetime 0s ./internal/vba

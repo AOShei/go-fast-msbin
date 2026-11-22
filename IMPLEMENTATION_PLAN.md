@@ -328,6 +328,44 @@ Found on the way:
 - **LibreOffice's files are not Excel's.** It writes `TRUE()` for TRUE, 0 for an argument left out, a cell for a range of one cell, and recalculates. The comparisons allow for what could be told apart; the rest lowers the figures above without being a difference in reading.
 - **Not read**: the records of a pivot cache whose source is gone (`pivot_cache`), the text of text boxes of Excel 5/95 (kept in the object's own record), several levels of categories of a chart (the innermost is given), a picture kept outside the file. Counted or absent, never guessed.
 
+### Phases 4 and 5: result (2026-11-22)
+
+Done together, on branch `phase-4-word`: Word documents, of Word 97 to 2003 and of Word 6 and 95.
+
+- **The reader** (`internal/doc`): the file information block; the piece table, with pieces of one byte or two to a character; the pages of paragraph and character properties and the lists of changes they hold; the style sheet with what each style inherits; the font table. One `body` part.
+- **Structure**, by go-fast-ooxml's rules: headings from the built-in heading styles and from outline levels (clamped to six, with the level as an attribute), titles and subtitles, quotations, code (consecutive paragraphs one block), list items with their level and their label. The labels are counted by go-fast-ooxml's numbering engine, fed from this format's list tables.
+- **Tables**: rows and cells from the cell and row marks; the grid from the edges of the cells of every row; cells merged along a row and down a column; header rows; a table inside a cell flattened into it. A row's definition too long for a page of properties is read from the Data stream.
+- **Notes**: footnotes and endnotes with their numbers, after the paragraph that refers to them; comments with their authors; text a tracked change removed as `note` `deletion` with author and date, and `text.tracked_changes`.
+- **Fields**: the result is text; the code is a `note` `field` (`stored` `field_code`); a `HYPERLINK` field is a link span and no note, as an `.docx` file has it.
+- **Headers and footers** once per distinct content; **bookmarks** as `Loc.Anchor`; **spans** for bold, italic, underline, strike-through, super- and subscript with `Options.Spans`.
+- **Declared**: `hidden` for hidden text (the vanish property, on the run or through its styles) and for a shape marked hidden. No declaration of this format answers to `no_ink`.
+- **Text boxes** at the paragraph their shape is anchored in; **pictures**, in the line of the text (from the Data stream) and in shapes (from the store of the drawing), as `image` blocks. Symbol fonts are translated, by the run's font and for characters inserted as symbols.
+- **Document variables** in the stored part (`document_variable`).
+- **Word 6 and 95** (`word6.go`): the text, in one code page for the document; headings by the built-in styles; tables by their cell marks; footnotes and endnotes; the results of fields. The changes to a style of that version are in a coding of their own and are not read: no lists, no hidden text, no tracked changes, no spans.
+
+**Measured:**
+
+| | |
+|---|---|
+| Against the `.docx` twin LibreOffice writes, read by go-fast-ooxml (`TestDocTwins`), 846 documents | 99,388 blocks identical in kind, level, label and text; 10,178 only here, 15,573 only in the twin; words: precision 0.988, recall 0.985. By kind: 11,084 list items identical of about 11,800; 5,658 headings of about 6,000; 1,899 footnotes of about 2,100; 1,224 tables of about 1,650 |
+| Words against LibreOffice's plain text, 841 documents | precision 0.983, recall 0.983, F1 0.983 (target 0.99: not met by this measure; see below) |
+| `large.doc`, 1.5 million words | 0.06 s (target 0.2 s; LibreOffice 8.1 s) |
+| Documents read | 867 of the 907 in the corpus; the rest are Word 2, encrypted (Phase 7), damaged or not Word files. One published document has no piece table that can be read |
+| Document variables against the twins | 80 of 81 the same |
+| Fuzzing | `FuzzWord` 60 million executions, `FuzzExtract` 23 million more. Three findings, fixed: control characters in a link's address, a negative slice at a gap between pieces, and control characters in text of two bytes to a character |
+
+Why the plain-text figure is below the target, and what it does not say:
+
+- **LibreOffice's text leaves out what this library reads**: the text of text boxes, footnotes, and headers and footers. Footnotes and headers are left out of the comparison; text boxes cannot be told apart, and count against precision. Documents whose text is all in text boxes score zero.
+- **One held-out document of Word 6/95** is read in the wrong code page: about a third of the words that differ. A document of that version is decoded with one code page (that of its fonts where they agree on one, otherwise of its language); a document that mixes two is not read right.
+- **The twins are the better measure**, since both sides are read into the same model, and there the differences are mostly LibreOffice's: it recalculates page numbers in footers, rewrites field codes, renames the Title style, and merges or splits some tables.
+
+Found on the way:
+
+- **The levels of the lists are not in the list table.** The table's length covers the lists; the levels follow it in the stream. Reading them from inside the table gave no list at all: the twin comparison showed 10,933 list items missing at once.
+- **A row's definition is often too long for its page of properties**, and is then in the Data stream with a pointer on the page. Without it a table broke into pieces at every such row.
+- **Not read**: form fields (their values are field results, and so are text; their drop-down entries are not given), equations (objects of the equation editor: listed as embedded files), the single-change form of a fast-saved piece's property modifier, and for Word 6/95 everything said above.
+
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).
 
 ## 8. Risks

@@ -22,3 +22,8 @@ and what each found.
 - Phase 3: the rest of Excel. Formulas as text, defined names, macro sheets,
   links to other workbooks, drop-down lists, text boxes, pictures, charts,
   pivot tables, and workbooks of Excel 5 and 95. The command has `-cells`.
+- Phases 4 and 5: Word documents. Text and structure (headings, lists with
+  labels, tables, footnotes, endnotes, comments, fields, headers and
+  footers, bookmarks), hidden text and spans, tracked deletions, text boxes,
+  pictures, document variables; and the text, headings, tables and footnotes
+  of Word 6/95 documents.

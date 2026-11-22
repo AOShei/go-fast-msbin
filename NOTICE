@@ -39,6 +39,14 @@ All of it is by the same author and under the same MIT License.
   internal/chart              from go-fast-ooxml (v0.1.1): the table of a
                               chart's data and its blocks, from
                               internal/chart/chart.go.
+  internal/doc/numbering.go   from go-fast-ooxml (v0.1.1): the counting and
+                              formatting of list labels of
+                              internal/wml/numbering.go; the definitions are
+                              read from this format's list tables. The rules
+                              by which a style's name makes a paragraph a
+                              title, a quotation or code are its
+                              internal/wml/styles.go's.
+  internal/hidden             from go-fast-ooxml (v0.1.1), unchanged.
   internal/codepage/decode.go added here: decoding a whole string.
   internal/msbintest          the writers of compound files (compound.go) and
                               of VBA projects (vba.go), from go-fast-ooxml's

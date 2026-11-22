@@ -5,10 +5,9 @@ Extracts the binary Office formats (Word `.doc`, Excel `.xls` and PowerPoint
 model, [`gofastcore.Document`](https://github.com/AOShei/go-fast-core).
 Standard library and go-fast modules only.
 
-**Status: in development, nothing released.** Excel workbooks are read, of
-Excel 97 to 2003 and of Excel 5 and 95. Of a Word document and a
-presentation the properties, the macros and the embedded files are read, and
-the text not yet: the one part of the document says so, with `part.failed`.
+**Status: in development, nothing released.** Excel workbooks and Word
+documents are read. Of a presentation the properties are read, and the
+slides not yet: the one part of the document says so, with `part.failed`.
 Encrypted files are refused for now.
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) has the plan, phase by
 phase, and what each phase found.
@@ -16,7 +15,8 @@ phase, and what each phase found.
 | Format | Extensions | `Source.Format` | State |
 |---|---|---|---|
 | Excel 97-2003 (BIFF8), Excel 5/95 (BIFF5) | `.xls`, `.xlt`, `.xla` | `xls` | read |
-| Word 97-2003, Word 6/95 | `.doc`, `.dot` | `doc` | properties, macros, embedded files; text not read yet |
+| Word 97-2003 | `.doc`, `.dot` | `doc` | read |
+| Word 6/95 | `.doc` | `doc` | text, headings, tables, footnotes; no lists, hidden text or tracked changes |
 | PowerPoint 97-2003 | `.ppt`, `.pps`, `.pot` | `ppt` | properties; slides, macros and embedded files not read yet |
 
 What is read today:
@@ -39,6 +39,14 @@ What is read today:
   of macro sheets. Links to other workbooks are `input.external_reference`.
   Not read: the records of a pivot cache whose source is gone, and the text
   boxes of Excel 5/95.
+- **Word documents**: one `body` part. Headings, list items with their
+  labels, quotations and code, by go-fast-ooxml's rules; tables with merged
+  cells and header rows; footnotes and endnotes with their numbers;
+  comments; tracked deletions as notes; the results of fields as text and
+  their codes as notes; links; headers and footers once each; bookmarks as
+  anchors; text boxes at their anchors; pictures; document variables in the
+  stored part. With `Options.Spans`: bold, italic, underline, strike-through,
+  super- and subscript. Declared: `hidden` for hidden text and hidden shapes.
 - **Properties** (`Metadata`), from the two property-set streams: title,
   subject, author, keywords, dates, application; comments, template, last
   author, revision, category, manager, company and the program's version in
@@ -69,6 +77,8 @@ refused with a message that says which it is.
 | `extract.go`, `file.go` | The public entry points: `Extract`, `ExtractFile`, `Extractor`; `Open` and `File`, for a part at a time |
 | `cmd/gofastmsbin` | The command: JSON, Markdown or text for files and directories |
 | `internal/xls` | The Excel reader: records, shared strings, cell formats, sheets, formulas, lists, shapes, charts |
+| `internal/doc` | The Word reader: pieces, properties, styles, lists, tables, notes, fields, text boxes, pictures; Word 6/95 |
+| `internal/hidden` | Spans and what is declared about the display of text, settled on a block |
 | `internal/ptg` | Compiled formulas back to text |
 | `internal/officeart`, `internal/media` | The drawing layer the three formats share: shapes, their properties, pictures |
 | `internal/chart` | A chart's data as a caption and a table |
@@ -95,6 +105,9 @@ go test -run TestSharedAgainstOracles -v .
 python -I testdata/oracle_xls.py testdata testdata/corpus/oracle-xls           # needs xlrd
 python3 testdata/oracle_lo.py testdata testdata/corpus/oracle-lo-xls          # needs LibreOffice; contained
 python3 testdata/oracle_lo.py testdata testdata/corpus/twins-xls --twin       # each workbook as .xlsx
+python3 testdata/oracle_lo.py testdata testdata/corpus/twins-doc --twin --format doc
+python3 testdata/oracle_lo.py testdata testdata/corpus/oracle-lo-doc --text --format doc
+go test -run 'TestDocTwins|TestDocTextAgainstLibreOffice' -v .
 go test -run 'TestCellsAgainstXlrd|TestShownAgainstLibreOffice|TestTwins|TestFormulasAgainstTwins' -v .
 go test -run '^$' -bench Large .                                               # needs bench/baseline.py generate
 go run ./cmd/gofastmsbin file.doc

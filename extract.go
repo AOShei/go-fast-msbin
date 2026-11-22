@@ -105,9 +105,9 @@ func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastco
 // Extract reads size bytes from r and returns the document.
 //
 // The format is decided from the file itself, never from a name. The
-// library is in development: workbooks are read; of a Word document and a
-// presentation the properties, the macros and the embedded files are
-// read, and the text is not yet (the part says so, with part.failed).
+// library is in development: workbooks and Word documents are read; of a
+// presentation the properties are, and the slides not yet (the part says
+// so, with part.failed).
 //
 // An error wraps one of the gofastcore errors:
 //

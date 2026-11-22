@@ -14,6 +14,9 @@ import (
 // BIFF8 is the version of a workbook of Excel 97 to 2003.
 const BIFF8 = "Excel 97-2003 (BIFF8)"
 
+// Word97 is the version of a document of Word 97 to 2003.
+const Word97 = "Word 97-2003"
+
 // Formats, as gofastcore.Source.Format has them.
 const (
 	Doc = "doc"

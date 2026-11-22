@@ -38,3 +38,5 @@ func benchLarge(b *testing.B, name string, workers int) {
 
 func BenchmarkLargeXLS(b *testing.B)          { benchLarge(b, "large.xls", 0) }
 func BenchmarkLargeXLSOneWorker(b *testing.B) { benchLarge(b, "large.xls", 1) }
+
+func BenchmarkLargeDOC(b *testing.B) { benchLarge(b, "large.doc", 0) }

@@ -62,6 +62,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		spans    = flags.Bool("spans", false, "report bold, italic and the like, and links, as spans")
 		workers  = flags.Int("workers", 0, "sheets or slides read at a time (0: one for each CPU)")
 		password = flags.String("password", "", "password of an encrypted file, and of encrypted files embedded in it")
+		maxCells = flags.Int64("max-cells", 0, "cells kept from a workbook (0: the default, 20 million; -1: no limit)")
 		maxBytes = flags.Int64("max-decoded-bytes", 0, "bytes a file and the files embedded in it may be expanded to: macro code, compressed pictures, embedded files written out (0: the default, 2 GiB; -1: no limit)")
 		maxText  = flags.Int64("max-text-bytes", 0, "bytes of text a document and the files embedded in it may hold (0: the default, 256 MiB; -1: no limit)")
 		quiet    = flags.Bool("quiet", false, "say nothing about files that were read; failures are still reported")
@@ -119,7 +120,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		opts.Parts = gofastcore.PartRange{First: a, Last: b}
 	}
-	extractor := &gofastmsbin.Extractor{}
+	extractor := &gofastmsbin.Extractor{MaxCells: *maxCells}
 	// A file embedded in a document is read too if it is of these formats.
 	opts.Child = func(ctx context.Context, name, mime string, r io.ReaderAt, size int64, o *gofastcore.Options) (*gofastcore.Document, error) {
 		return extractor.Extract(ctx, r, size, o)

@@ -15,3 +15,7 @@ and what each found.
   says so. `Open` and `File` read a part at a time; the `gofastmsbin`
   command prints JSON, Markdown or text. A compound file with a wrong
   byte-order mark or a broken directory chain is read as far as it is sound.
+- Phase 2: Excel workbooks (BIFF8). Cells as shown, through their number
+  formats; tables found as go-fast-ooxml finds them; merged cells, comments,
+  hyperlinks, hidden sheets, rows and columns; cell types and stored values
+  with `Options.Cells`; sheets read in parallel; `Extractor.MaxCells`.

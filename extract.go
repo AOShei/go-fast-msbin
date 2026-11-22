@@ -24,6 +24,11 @@ const (
 	// it: macro code and pictures the file keeps compressed, and embedded
 	// files written out to be read.
 	DefaultMaxDecodedBytes = 2 << 30
+	// DefaultMaxCells bounds the cells kept from a workbook, over all its
+	// sheets. Each cell kept costs memory in the result whatever the size
+	// of the file, so this is what bounds the memory a workbook can ask
+	// for.
+	DefaultMaxCells = 20_000_000
 )
 
 // Warning codes specific to this library. Each states a fact about the
@@ -58,7 +63,13 @@ const (
 // formats of Office 97 to 2003. The zero value is ready to use and safe
 // for concurrent use. Its fields are the settings only this library has;
 // everything else is in gofastcore.Options.
-type Extractor struct{}
+type Extractor struct {
+	// MaxCells bounds the cells kept from a workbook, over all its
+	// sheets. A sheet that reaches it is cut off there, with a
+	// limit.exceeded warning. Zero means DefaultMaxCells; negative means
+	// no limit.
+	MaxCells int64
+}
 
 var _ gofastcore.Extractor = (*Extractor)(nil)
 
@@ -94,9 +105,9 @@ func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastco
 // Extract reads size bytes from r and returns the document.
 //
 // The format is decided from the file itself, never from a name. The
-// library is in development: the properties, the macros and the embedded
-// files of a document are read, and its text is not yet (its part says
-// so, with part.failed).
+// library is in development: workbooks are read; of a Word document and a
+// presentation the properties, the macros and the embedded files are
+// read, and the text is not yet (the part says so, with part.failed).
 //
 // An error wraps one of the gofastcore errors:
 //

@@ -25,6 +25,11 @@ All of it is by the same author and under the same MIT License.
   internal/stored,            and warning codes are this library's; the stored
   internal/unit,              part holds macros only; file.go keeps ooxml's
   file.go, cmd/gofastmsbin    reading of parts in order and in parallel.
+  internal/grid               from go-fast-ooxml (v0.1.1): the stage of
+                              internal/sml that turns a sheet's cells into
+                              table blocks (regions.go, and the ordering and
+                              naming of cells from sheet.go and sml.go), made
+                              a package of its own.
   internal/codepage/decode.go added here: decoding a whole string.
   internal/msbintest          the writers of compound files (compound.go) and
                               of VBA projects (vba.go), from go-fast-ooxml's

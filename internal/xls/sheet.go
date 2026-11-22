@@ -1,0 +1,698 @@
+package xls
+
+import (
+	"bytes"
+	"context"
+	"math"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-msbin/internal/clean"
+	"github.com/AOShei/go-fast-msbin/internal/grid"
+	"github.com/AOShei/go-fast-msbin/internal/numfmt"
+	"github.com/AOShei/go-fast-msbin/internal/symbol"
+	"github.com/AOShei/go-fast-msbin/internal/unit"
+	"github.com/AOShei/go-fast-msbin/internal/warn"
+)
+
+// arena holds the text of a sheet's cells in large pieces, so that a cell
+// costs no allocation of its own. A piece is never moved once text has
+// been cut from it.
+type arena struct {
+	b strings.Builder
+}
+
+const arenaPiece = 256 << 10
+
+func (a *arena) put(p []byte) string {
+	if len(p) == 0 {
+		return ""
+	}
+	if a.b.Cap()-a.b.Len() < len(p) {
+		a.b = strings.Builder{}
+		a.b.Grow(max(arenaPiece, len(p)))
+	}
+	start := a.b.Len()
+	a.b.Write(p)
+	return a.b.String()[start:]
+}
+
+// pos is the place of a cell on its sheet.
+type pos struct{ row, col int32 }
+
+func before(a, b pos) bool { return a.row < b.row || a.row == b.row && a.col < b.col }
+
+// detail is what a cell holds besides its text, before its table is made.
+type detail struct {
+	at             pos
+	formula, value string
+	typ            gofastcore.CellType
+}
+
+// comment is a note on a cell: where it is, who wrote it, and the number
+// of the drawing object that holds its text.
+type comment struct {
+	row, col int32
+	author   string
+	obj      uint16
+}
+
+// sheet reads one sheet. Each sheet is read by one goroutine and shares
+// nothing that changes with the others, apart from the workbook's
+// budgets.
+type sheet struct {
+	b    *Book
+	ctx  context.Context
+	part gofastcore.Part
+	g    grid.Sheet
+	c    cursor
+	size int // the bytes of the sheet's records, at most
+
+	lost   warn.Lost
+	capped bool
+	text   arena
+	room   *gofastcore.TextBudget
+	raw    []byte // a string being read
+	out    []byte // a value being formatted
+	sym    []byte // text being translated from a symbol font
+
+	// The row being read: the cells of a row are charged to the budgets
+	// together.
+	rowAt     int32
+	rowFirst  int   // the index of its first cell
+	rowBytes  int64 // the text of its cells
+	pending   int64 // text of the cells read and not yet in tables
+	last      pos   // the place of the last cell kept
+	removed   int   // control characters taken out
+	unmapped  int   // codes of symbol fonts with no character
+	isDate    bool  // the value just formatted was shown as a date
+	unread    map[string]int
+	macros    bool // the sheet is a sheet of macros
+	cutOff    bool // the records break off before their end
+	notSheet  bool // the workbook lists the sheet and does not hold it
+	cancelled bool
+
+	// A formula whose result is a string: the string follows in a record
+	// of its own.
+	strAt    pos
+	strStyle *cellStyle
+	strWait  bool
+
+	details         []detail
+	detailsUnsorted bool
+	linkAt          map[pos]string
+	links           []link
+
+	// Comments: the notes, and the text of the drawing objects they
+	// name.
+	notes    []comment
+	noteText map[uint16]string
+	objID    uint16
+	objNote  bool
+}
+
+// link is a hyperlink of a range of cells.
+type link struct {
+	at   grid.Rect
+	href string
+}
+
+// A link over a range of more cells than this is kept as a range and
+// looked up, not spread over its cells.
+const linkSpread = 1 << 12
+
+// A cell takes fourteen bytes of a sheet's records at least, six in a
+// run of numbers; room is made at once for no more than two million.
+const (
+	minCellBytes = 14
+	maxReserve   = 2 << 20
+)
+
+var (
+	textTrue  = "TRUE"
+	textFalse = "FALSE"
+)
+
+// errorText is what a cell shows for an error value ([MS-XLS] 2.5.11).
+func errorText(code byte) string {
+	switch code {
+	case 0x00:
+		return "#NULL!"
+	case 0x07:
+		return "#DIV/0!"
+	case 0x0F:
+		return "#VALUE!"
+	case 0x17:
+		return "#REF!"
+	case 0x1D:
+		return "#NAME?"
+	case 0x24:
+		return "#NUM!"
+	case 0x2A:
+		return "#N/A"
+	case 0x2B:
+		return "#GETTING_DATA"
+	}
+	return "#ERR" + strconv.Itoa(int(code))
+}
+
+// sheet reads the sheet with the given index.
+func (b *Book) sheet(ctx context.Context, index int) *sheet {
+	ref := b.refs[index]
+	sh := &sheet{b: b, ctx: ctx, unread: map[string]int{}, rowAt: -1, last: pos{-1, -1}}
+	sh.c.data = b.data
+	sh.room = gofastcore.TextBudgetFrom(ctx)
+	sh.g.Room = sh.room
+	part := &sh.part
+	part.Kind, part.Number, part.Name = gofastcore.PartSheet, index+1, ref.name
+	if ref.hidden {
+		part.Display = gofastcore.DisplayHidden
+	}
+	switch ref.kind {
+	case dtChart:
+		// A sheet that is a chart.
+		sh.unread["chart sheet"]++
+	default:
+		sh.macros = ref.kind == dtMacro
+		// The sheet's records end where those of the next begin.
+		end := len(b.data)
+		for _, other := range b.refs {
+			if other.pos > ref.pos && other.pos < end {
+				end = other.pos
+			}
+		}
+		sh.size = max(end-ref.pos, 0)
+		sh.read(ref.pos)
+	}
+	if sh.notSheet {
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the workbook lists the sheet but does not contain it")
+	} else {
+		sh.blocks()
+	}
+	sh.finish()
+	return sh
+}
+
+// result is what reading the sheet gave.
+func (sh *sheet) result() *unit.Result {
+	return &unit.Result{Part: sh.part, Tally: unit.Tally{
+		Unread: sh.unread, Macros: sh.macros,
+		Limited: sh.capped || sh.g.Cut != "",
+	}}
+}
+
+// read reads the records of the sheet, from its BOF record at offset at
+// to its EOF.
+func (sh *sheet) read(at int) {
+	c := &sh.c
+	typ, ok := c.record(at)
+	if !ok || typ != recBOF {
+		sh.notSheet = true
+		return
+	}
+	depth := 0 // inside the records of a chart placed on the sheet
+	for n := 0; ; n++ {
+		typ, ok := c.record(c.next)
+		if !ok {
+			sh.cutOff = true
+			break
+		}
+		if n&4095 == 4095 && sh.ctx.Err() != nil {
+			sh.cancelled = true
+			break
+		}
+		if depth > 0 {
+			switch typ {
+			case recBOF:
+				depth++
+			case recEOF:
+				depth--
+			}
+			continue
+		}
+		if typ == recEOF {
+			break
+		}
+		if !sh.record(typ) {
+			break
+		}
+	}
+	if c.short {
+		sh.cutOff = true
+	}
+	sh.endRow()
+}
+
+// record reads one record of the sheet. It reports false where reading
+// is to stop: a limit was reached, or the sheet is not one of cells.
+func (sh *sheet) record(typ uint16) bool {
+	c := &sh.c
+	b := c.b
+	// A cell's record begins with its row, its column and its format.
+	cell := func(need int) (row, col int32, style *cellStyle, ok bool) {
+		if len(b) < need {
+			return 0, 0, nil, false
+		}
+		return int32(le.Uint16(b)), int32(le.Uint16(b[2:])), sh.b.style(le.Uint16(b[4:])), true
+	}
+	switch typ {
+	case recLabelSST:
+		if row, col, style, ok := cell(10); ok {
+			return sh.sharedStr(row, col, style, le.Uint32(b[6:]))
+		}
+	case recRK:
+		if row, col, style, ok := cell(10); ok {
+			return sh.number(row, col, style, rk(le.Uint32(b[6:])))
+		}
+	case recNumber:
+		if row, col, style, ok := cell(14); ok {
+			return sh.number(row, col, style, math.Float64frombits(le.Uint64(b[6:])))
+		}
+	case recMulRK:
+		// A row, the first column, a format and a value for each cell,
+		// and the last column.
+		if len(b) < 12 {
+			break
+		}
+		row, col := int32(le.Uint16(b)), int32(le.Uint16(b[2:]))
+		for cells := b[4 : len(b)-2]; len(cells) >= 6; cells, col = cells[6:], col+1 {
+			if !sh.number(row, col, sh.b.style(le.Uint16(cells)), rk(le.Uint32(cells[2:]))) {
+				return false
+			}
+		}
+	case recBoolErr:
+		if row, col, _, ok := cell(8); ok {
+			text, kind := textFalse, gofastcore.CellBool
+			switch {
+			case b[7] != 0:
+				text, kind = errorText(b[6]), gofastcore.CellError
+			case b[6] != 0:
+				text = textTrue
+			}
+			return sh.add(row, col, text, 0, kind, "")
+		}
+	case recFormula, recFormula3, recFormula4:
+		// The result is a number, or, where its last two bytes are all
+		// ones, a string that follows, a truth value, an error or the
+		// empty string ([MS-XLS] 2.5.133).
+		row, col, style, ok := cell(14)
+		if !ok {
+			break
+		}
+		sh.strWait = false
+		res := b[6:14]
+		if le.Uint16(res[6:]) != 0xFFFF {
+			return sh.number(row, col, style, math.Float64frombits(le.Uint64(res)))
+		}
+		switch res[0] {
+		case 0:
+			sh.strAt, sh.strStyle, sh.strWait = pos{row, col}, style, true
+		case 1:
+			text := textFalse
+			if res[2] != 0 {
+				text = textTrue
+			}
+			return sh.add(row, col, text, 0, gofastcore.CellBool, "")
+		case 2:
+			return sh.add(row, col, errorText(res[2]), 0, gofastcore.CellError, "")
+		}
+	case recString:
+		if !sh.strWait {
+			break
+		}
+		sh.strWait = false
+		raw, _ := c.str(sh.raw[:0])
+		sh.raw = raw
+		return sh.str(sh.strAt.row, sh.strAt.col, sh.strStyle, sh.cellText(raw), gofastcore.CellText)
+	case recLabel, recRString:
+		if row, col, style, ok := cell(9); ok {
+			c.b = b[6:]
+			raw, _ := c.str(sh.raw[:0])
+			sh.raw = raw
+			return sh.str(row, col, style, sh.cellText(raw), gofastcore.CellUnset)
+		}
+	case recRow:
+		// A row of no height is hidden ([MS-XLS] 2.4.221, fDyZero).
+		if len(b) >= 16 && le.Uint16(b[12:])&0x0020 != 0 {
+			sh.g.HiddenRows = append(sh.g.HiddenRows, int32(le.Uint16(b)))
+		}
+	case recColInfo:
+		if len(b) >= 10 && le.Uint16(b[8:])&0x0001 != 0 {
+			lo, hi := int32(le.Uint16(b)), int32(le.Uint16(b[2:]))
+			if lo <= hi {
+				sh.g.HiddenCols = append(sh.g.HiddenCols, grid.Span{Lo: lo, Hi: min(hi, grid.MaxCols-1)})
+			}
+		}
+	case recMergeCells:
+		if len(b) < 2 {
+			break
+		}
+		refs := b[2:]
+		for n := int(le.Uint16(b)); n > 0 && len(refs) >= 8; n, refs = n-1, refs[8:] {
+			if len(sh.g.Merges) >= warn.MaxMerges {
+				sh.lost.Add(warn.CapMerges, 1)
+				continue
+			}
+			r := grid.Rect{R0: int32(le.Uint16(refs)), R1: int32(le.Uint16(refs[2:])), C0: int32(le.Uint16(refs[4:])), C1: int32(le.Uint16(refs[6:]))}
+			if r.R0 <= r.R1 && r.C0 <= r.C1 {
+				sh.g.Merges = append(sh.g.Merges, r)
+			}
+		}
+	case recDimensions:
+		// The rows and columns the sheet's cells lie in ([MS-XLS]
+		// 2.4.90): room is made for its cells at once, as many as that
+		// area and the bytes of the sheet's records can hold, so that
+		// the list of them is not grown and copied as it fills.
+		if len(b) >= 12 && len(sh.g.Cells) == 0 {
+			rows := int64(le.Uint32(b[4:])) - int64(le.Uint32(b))
+			cols := int64(le.Uint16(b[10:])) - int64(le.Uint16(b[8:]))
+			if n := min(rows*cols, int64(sh.size/minCellBytes), maxReserve); rows > 0 && cols > 0 && n > 0 {
+				sh.g.Cells = make([]grid.Cell, 0, n)
+			}
+		}
+	case recWsBool:
+		// A dialog sheet is a worksheet marked as one: what is on it is
+		// controls, not cells ([MS-XLS] 2.4.351, fDialog).
+		if len(b) >= 2 && le.Uint16(b)&0x0010 != 0 {
+			sh.unread["dialog sheet"]++
+			return false
+		}
+	case recBOF:
+		// The records of a chart placed on the sheet: passed over to
+		// their own EOF.
+		for depth := 1; depth > 0; {
+			typ, ok := c.record(c.next)
+			if !ok {
+				sh.cutOff = true
+				return false
+			}
+			switch typ {
+			case recBOF:
+				depth++
+			case recEOF:
+				depth--
+			}
+		}
+	case recHLink:
+		if sh.b.opts != nil && sh.b.opts.Spans {
+			sh.hyperlink(b)
+		}
+	case recObj:
+		// The object's kind and number ([MS-XLS] 2.5.143, FtCmo): a note
+		// is kind 0x19.
+		if len(b) >= 8 && le.Uint16(b) == 0x0015 {
+			sh.objNote, sh.objID = le.Uint16(b[4:]) == 0x0019, le.Uint16(b[6:])
+		}
+	case recTxo:
+		sh.textObject(b)
+	case recNote:
+		sh.note(b)
+	}
+	return true
+}
+
+// rk is the number an RK value stands for ([MS-XLS] 2.5.217): thirty bits
+// of an integer or of the high end of a floating-point number, and two
+// flags, one of which divides by a hundred.
+func rk(v uint32) float64 {
+	var f float64
+	if v&2 != 0 {
+		f = float64(int32(v) >> 2)
+	} else {
+		f = math.Float64frombits(uint64(v&^3) << 32)
+	}
+	if v&1 != 0 {
+		f /= 100
+	}
+	return f
+}
+
+// cellText puts text read from a record into the shared model's form:
+// valid UTF-8, no control characters, ligatures expanded, no space at
+// the ends.
+func (sh *sheet) cellText(raw []byte) string {
+	if clean.Plain(raw) {
+		return sh.text.put(bytes.TrimSpace(raw))
+	}
+	out, removed := clean.Append(sh.out[:0], raw, clean.Ligatures)
+	sh.out = out
+	sh.removed += removed
+	return sh.text.put(bytes.TrimSpace(out))
+}
+
+// str adds a cell of text, as its format shows it. kind is CellText for
+// the result of a formula, and unset for text the cell holds.
+func (sh *sheet) str(row, col int32, style *cellStyle, text string, kind gofastcore.CellType) bool {
+	if text == "" {
+		return true
+	}
+	var hidden gofastcore.Display
+	if style.symbol != symbol.None {
+		var missing int
+		sh.sym, missing = style.symbol.Translate(sh.sym[:0], []byte(text))
+		sh.unmapped += missing
+		text = sh.text.put(sh.sym)
+	}
+	if !style.format.PlainText() {
+		out, result := style.format.Text(sh.out[:0], text)
+		sh.out = out
+		text, hidden = sh.text.put(bytes.TrimSpace(out)), blank(result)
+	}
+	return sh.add(row, col, text, hidden, kind, "")
+}
+
+// sharedStr adds a cell that holds a shared string.
+func (sh *sheet) sharedStr(row, col int32, style *cellStyle, index uint32) bool {
+	text := sh.b.shared(index)
+	runs, rich := sh.b.rich[index]
+	if !rich {
+		return sh.str(row, col, style, text, gofastcore.CellUnset)
+	}
+	// A string that changes font partway: the cell's font up to the first
+	// change, and each run's font from there. A piece in a symbol font is
+	// codes of that font.
+	out := sh.sym[:0]
+	at, font := 0, style.symbol
+	for i := 0; i <= len(runs); i++ {
+		end := len(text)
+		if i < len(runs) {
+			end = min(int(runs[i].at), len(text))
+		}
+		if piece := text[at:end]; font != symbol.None {
+			var missing int
+			out, missing = font.Translate(out, []byte(piece))
+			sh.unmapped += missing
+		} else {
+			out = append(out, piece...)
+		}
+		at = end
+		if i < len(runs) {
+			font = runs[i].font
+		}
+	}
+	sh.sym = out
+	plain := *style
+	plain.symbol = symbol.None
+	return sh.str(row, col, &plain, sh.text.put(bytes.TrimSpace(out)), gofastcore.CellUnset)
+}
+
+// blank is the reason a value that its format displays as nothing cannot
+// be seen.
+func blank(r numfmt.Result) gofastcore.Display {
+	if r == numfmt.Blank {
+		return gofastcore.DisplayHidden
+	}
+	return 0
+}
+
+// number adds a cell that holds a number, as its format shows it.
+func (sh *sheet) number(row, col int32, style *cellStyle, v float64) bool {
+	var hidden gofastcore.Display
+	out := sh.out[:0]
+	kind := gofastcore.CellNumber
+	if style.general {
+		// Most numbers are whole and short, and General shows them as
+		// their digits.
+		if i := int64(v); float64(i) == v && i > -1e11 && i < 1e11 && (i != 0 || !math.Signbit(v)) {
+			out = strconv.AppendInt(out, i, 10)
+		} else {
+			out = numfmt.AppendGeneral(out, v)
+		}
+	} else {
+		var result numfmt.Result
+		out, result = style.format.Number(out, v, sh.b.date1904)
+		hidden = blank(result)
+		if result == numfmt.Date {
+			kind = gofastcore.CellDate
+		}
+	}
+	sh.out = out
+	if len(out) == 0 {
+		return true
+	}
+	value := ""
+	if sh.b.opts != nil && sh.b.opts.Cells {
+		// The stored value, where the text does not show it in full.
+		var buf [32]byte
+		if full := strconv.AppendFloat(buf[:0], v, 'g', -1, 64); string(full) != string(out) {
+			value = string(full)
+		}
+	}
+	return sh.add(row, col, sh.text.put(out), hidden, kind, value)
+}
+
+// add keeps a cell. It reports false, having dropped the row the cell is
+// in, where a limit was reached.
+func (sh *sheet) add(row, col int32, text string, hidden gofastcore.Display, kind gofastcore.CellType, value string) bool {
+	if text == "" {
+		return true
+	}
+	if col >= grid.MaxCols {
+		sh.lost.Add(warn.CapSheetCols, 1)
+		return true
+	}
+	if row != sh.rowAt {
+		if !sh.endRow() {
+			return false
+		}
+		sh.rowAt, sh.rowFirst = row, len(sh.g.Cells)
+	}
+	at := pos{row, col}
+	if !before(sh.last, at) {
+		sh.g.Unsorted = true
+	}
+	sh.last = at
+	sh.rowBytes += int64(len(text))
+	sh.g.Cells = append(sh.g.Cells, grid.Cell{Text: text, Row: row, Col: col, Hidden: hidden})
+	if kind != gofastcore.CellUnset && sh.b.opts != nil && sh.b.opts.Cells {
+		if n := len(sh.details); n > 0 && !before(sh.details[n-1].at, at) {
+			sh.detailsUnsorted = true
+		}
+		sh.details = append(sh.details, detail{at: at, typ: kind, value: value})
+	}
+	return true
+}
+
+// endRow charges the cells of the row just read to the document's
+// budgets. It reports false, having dropped them, where there is no room.
+func (sh *sheet) endRow() bool {
+	n := len(sh.g.Cells) - sh.rowFirst
+	bytes := sh.rowBytes
+	sh.rowBytes = 0
+	if sh.rowAt < 0 || n <= 0 {
+		return true
+	}
+	drop := func(why string) bool {
+		sh.g.Cells = sh.g.Cells[:sh.rowFirst]
+		for len(sh.details) > 0 && sh.details[len(sh.details)-1].at.row == sh.rowAt {
+			sh.details = sh.details[:len(sh.details)-1]
+		}
+		sh.g.Cut = why
+		sh.rowAt = -1
+		return false
+	}
+	if sh.b.cells.Add(-int64(n)) < 0 {
+		return drop("the limit on the number of cells was reached")
+	}
+	// The text is taken from the budget when the tables are made, with
+	// what their blocks and cells take; reading stops here once there
+	// could be no room for it.
+	if sh.pending += bytes; sh.pending > sh.room.Left() {
+		return drop("the limit on the amount of text was reached")
+	}
+	sh.rowFirst = len(sh.g.Cells)
+	return true
+}
+
+// Detail gives what a cell holds besides its text (grid.Details).
+func (sh *sheet) Detail(c *grid.Cell, row, col int) (gofastcore.CellDetail, bool) {
+	out := gofastcore.CellDetail{Row: row, Col: col}
+	at := pos{c.Row, c.Col}
+	if sh.linkAt != nil || sh.links != nil {
+		out.Href = sh.hrefOf(at)
+	}
+	if i := sort.Search(len(sh.details), func(i int) bool { return !before(sh.details[i].at, at) }); i < len(sh.details) && sh.details[i].at == at {
+		d := &sh.details[i]
+		out.Formula, out.Type, out.Value = d.formula, d.typ, d.value
+	}
+	return out, out.Href != "" || out.Formula != "" || out.Type != gofastcore.CellUnset
+}
+
+// blocks turns what was read into the part's blocks: the cells as
+// tables, and the comments at their cells.
+func (sh *sheet) blocks() {
+	g := &sh.g
+	if len(g.HiddenRows) > 1 {
+		sort.Slice(g.HiddenRows, func(i, j int) bool { return g.HiddenRows[i] < g.HiddenRows[j] })
+		rows := g.HiddenRows[:0]
+		for i, r := range g.HiddenRows {
+			if i == 0 || r != g.HiddenRows[i-1] {
+				rows = append(rows, r)
+			}
+		}
+		g.HiddenRows = rows
+	}
+	g.Order()
+	if sh.detailsUnsorted {
+		sort.SliceStable(sh.details, func(i, j int) bool { return before(sh.details[i].at, sh.details[j].at) })
+		kept := sh.details[:0]
+		for i := range sh.details {
+			if n := len(kept); n > 0 && kept[n-1].at == sh.details[i].at {
+				continue
+			}
+			kept = append(kept, sh.details[i])
+		}
+		sh.details = kept
+	}
+	if len(sh.details) > 0 || sh.linkAt != nil || sh.links != nil {
+		g.Details = sh
+	}
+	blocks := g.Regions(nil)
+	blocks = append(blocks, sh.comments()...)
+	sh.part.Blocks = grid.Arrange(blocks)
+	// The tables hold the text now.
+	g.Cells, sh.details, sh.raw, sh.out = nil, nil, nil, nil
+}
+
+// finish completes the part: what limits cut it short, what it lacks,
+// what was found while its cells were read, and which of its text is
+// hidden.
+func (sh *sheet) finish() {
+	part := &sh.part
+	if sh.cutOff && !sh.notSheet {
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the sheet is cut off: its records break off before their end")
+	}
+	if sh.g.Cut != "" {
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, sh.g.Cut+"; the sheet is cut off there")
+	}
+	if sh.lost.Say(part) {
+		sh.capped = true
+	}
+	hasText, hasImage := false, false
+	for i := range part.Blocks {
+		if part.Blocks[i].Kind == gofastcore.KindImage {
+			hasImage = true
+		} else {
+			hasText = true
+		}
+	}
+	if !hasText && !part.Has(gofastcore.WarnPartFailed) {
+		if hasImage {
+			part.Warn(gofastcore.SeverityWarning, gofastcore.WarnPartImageOnly, "")
+		} else {
+			part.Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "")
+		}
+	}
+	if sh.g.Split > 0 {
+		part.Warn(gofastcore.SeverityInfo, warn.RegionSplit, strconv.Itoa(sh.g.Split)+" areas too thinly filled to be tables were written a row at a time")
+	}
+	if sh.removed > 0 {
+		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(sh.removed))
+	}
+	if sh.unmapped > 0 {
+		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(sh.unmapped))
+	}
+	part.Finish()
+}

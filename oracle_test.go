@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin"
@@ -51,7 +52,7 @@ func loadSharedOracle(t *testing.T) map[string]sharedOracle {
 // squash makes two readings of a string comparable: runs of white space
 // and control characters are one space.
 func squash(s string) string {
-	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return r <= ' ' || r == 0x7F || r == 0xA0 }), " ")
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }), " ")
 }
 
 // The document properties agree with what olefile reads, and the macro

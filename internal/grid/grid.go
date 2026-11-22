@@ -1,0 +1,654 @@
+// Package grid turns the cells of a sheet into table blocks. It is the
+// stage of go-fast-ooxml's workbook reader that does so, so that a
+// workbook saved in either format gives the same tables.
+//
+// A sheet is a grid with no end, and what a person sees on it as "a
+// table" is a block of filled cells with empty rows and columns around
+// it. A table the workbook declares is taken as declared. The cells left
+// over are cut along empty rows, each piece along empty columns, and so
+// on: a region is a rectangle with no empty row or column across it. The
+// boundaries found this way are a reading of the layout, not something
+// the file states, and such tables are marked as inferred.
+package grid
+
+import (
+	"math"
+	"sort"
+	"strconv"
+
+	"github.com/AOShei/go-fast-core"
+)
+
+// MaxCols is the number of columns of the largest sheet: a cell's column
+// is below it.
+const MaxCols = 1 << 14
+
+// Cell is one cell that shows something. Empty cells are not kept.
+type Cell struct {
+	Text   string
+	Row    int32 // from 0
+	Col    int32
+	Hidden gofastcore.Display // what the file declares about its display, where the cell itself is the reason
+}
+
+// Rect is a rectangle of cells, both corners included.
+type Rect struct{ R0, C0, R1, C1 int32 }
+
+// Span is a run of rows or columns, both ends included.
+type Span struct{ Lo, Hi int32 }
+
+// Declared is a table the workbook declares.
+type Declared struct {
+	At         Rect
+	HeaderRows int
+	Name       string // the name the program shows for it
+	Role       string // gofastcore.RolePivot for a pivot table; empty for a table
+}
+
+// Details gives what a cell holds besides its text: its formula, its
+// type and stored value, where it links to.
+type Details interface {
+	// Detail returns the entry of Table.Cells for the cell, placed at
+	// row, col of its table, and whether it has one.
+	Detail(c *Cell, row, col int) (gofastcore.CellDetail, bool)
+}
+
+// Sheet is the cells of a sheet and what the sheet says about them.
+type Sheet struct {
+	Cells []Cell
+	// Unsorted says the cells are not in reading order; Order puts them
+	// in it.
+	Unsorted   bool
+	HiddenRows []int32
+	HiddenCols []Span
+	Merges     []Rect
+	// Room is what the document may still hold of text.
+	Room *gofastcore.TextBudget
+	// Details gives the entries of Table.Cells, or is nil for none.
+	Details Details
+
+	// Split counts the regions too thinly filled to be a grid, which were
+	// written a row at a time; Cut says why the tables stop early, if
+	// they do.
+	Split int
+	Cut   string
+}
+
+func (sh *Sheet) cellDetail(c *Cell, row, col int) (gofastcore.CellDetail, bool) {
+	if sh.Details == nil {
+		return gofastcore.CellDetail{}, false
+	}
+	return sh.Details.Detail(c, row, col)
+}
+
+// detailBytes is what the entry of a cell takes from the text budget, and
+// whether it has one.
+func (sh *Sheet) detailBytes(c *Cell) (int64, bool) {
+	d, ok := sh.cellDetail(c, 0, 0)
+	if !ok {
+		return 0, false
+	}
+	return int64(len(d.Href) + len(d.Formula) + len(d.Value)), true
+}
+
+// group is a set of cells in reading order: a run of the sheet's cells,
+// or a list of their positions.
+type group struct {
+	Lo, Hi int
+	list   []int32
+}
+
+func (g group) len() int {
+	if g.list != nil {
+		return len(g.list)
+	}
+	return g.Hi - g.Lo
+}
+
+func (g group) index(i int) int {
+	if g.list != nil {
+		return int(g.list[i])
+	}
+	return g.Lo + i
+}
+
+func (g group) slice(from, to int) group {
+	if g.list != nil {
+		return group{list: g.list[from:to:to]}
+	}
+	return group{Lo: g.Lo + from, Hi: g.Lo + to}
+}
+
+// Limits on what a region may become.
+const (
+	// maxCuts is how many times a piece is cut again. Layouts people make
+	// need two or three; the bound keeps a contrived one from costing
+	// more than a fixed number of passes over the cells.
+	maxCuts = 8
+	// maxTableCells is the largest table written as one block. A larger
+	// region is written as several, each a run of its rows, the later ones
+	// marked as continuing the one before.
+	maxTableCells = 1 << 20
+)
+
+// Placed is a block with the cell it sits at, by which the blocks of a
+// sheet are put in order.
+type Placed struct {
+	Row, Col int32
+	Seq      int
+	// piece marks a later run of rows of a table too large for one
+	// block: it continues the block Placed just before it.
+	Piece bool
+	Block gofastcore.Block
+}
+
+// builder turns the cells of a sheet into table blocks.
+type builder struct {
+	sh    *Sheet
+	out   []Placed
+	owner []int32 // for each cell, the table it went into plus one; kept only if the sheet has merged cells
+	rects []Rect  // the rectangle of each table
+	occ   []bool  // scratch: which columns of a piece are occupied
+	ids   []int32 // scratch: the column group of each column
+	full  bool    // the text budget ran out: no more tables are written
+}
+
+// regions returns the sheet's cells as table blocks.
+func (sh *Sheet) Regions(declared []Declared) []Placed {
+	b := &builder{sh: sh}
+	n := len(sh.Cells)
+	if len(sh.Merges) > 0 {
+		b.owner = make([]int32, n)
+	}
+	rest := group{Lo: 0, Hi: n}
+	if len(declared) > 0 {
+		taken := make([]bool, n)
+		any := false
+		// Tables do not overlap, so finding their cells is one pass over
+		// the sheet in all. A file that declares many tables over the
+		// same rows would make it many passes; past a few, the rest of
+		// its tables are not taken as declared.
+		effort := 8*n + 1<<16
+		for _, t := range declared {
+			// The cells inside the table's rectangle that no earlier
+			// table has.
+			lo := sort.Search(n, func(i int) bool { return sh.Cells[i].Row >= t.At.R0 })
+			var list []int32
+			if effort < 0 {
+				break
+			}
+			for i := lo; i < n && sh.Cells[i].Row <= t.At.R1; i++ {
+				effort--
+				if c := &sh.Cells[i]; c.Col >= t.At.C0 && c.Col <= t.At.C1 && !taken[i] {
+					list = append(list, int32(i))
+				}
+			}
+			if len(list) == 0 {
+				continue
+			}
+			at := t.At
+			if b.table(group{list: list}, &at, t.HeaderRows, t.Name, t.Role) {
+				for _, i := range list {
+					taken[i] = true
+				}
+				any = true
+			}
+		}
+		if any {
+			var list []int32
+			for i := range taken {
+				if !taken[i] {
+					list = append(list, int32(i))
+				}
+			}
+			rest = group{list: list}
+			if list == nil {
+				rest = group{}
+			}
+		}
+	}
+
+	type item struct {
+		g     group
+		depth int
+	}
+	work := []item{{rest, 0}}
+	var pieces []group
+	for len(work) > 0 {
+		it := work[len(work)-1]
+		work = work[:len(work)-1]
+		if it.g.len() == 0 {
+			continue
+		}
+		var changed bool
+		pieces, changed = b.cut(it.g, pieces[:0])
+		for _, p := range pieces {
+			if changed && it.depth+1 < maxCuts {
+				work = append(work, item{p, it.depth + 1})
+			} else if !b.table(p, nil, 0, "", "") {
+				b.sparse(p)
+			}
+		}
+	}
+	b.merges()
+	return b.out
+}
+
+// cut divides a group along its empty rows, and each piece along its
+// empty columns. changed reports whether there was anything to divide.
+func (b *builder) cut(g group, out []group) (pieces []group, changed bool) {
+	cells := b.sh.Cells
+	n := g.len()
+	start := 0
+	for i := 1; i <= n; i++ {
+		if i < n && cells[g.index(i)].Row-cells[g.index(i-1)].Row <= 1 {
+			continue
+		}
+		// g[start:i] is a band of rows with no empty row across it.
+		band := g.slice(start, i)
+		if start > 0 || i < n {
+			changed = true
+		}
+		start = i
+		lo, hi := int32(MaxCols), int32(-1)
+		for j := 0; j < band.len(); j++ {
+			c := cells[band.index(j)].Col
+			lo, hi = min(lo, c), max(hi, c)
+		}
+		width := int(hi - lo + 1)
+		if cap(b.occ) < width {
+			b.occ = make([]bool, MaxCols)
+			b.ids = make([]int32, MaxCols)
+		}
+		occ, ids := b.occ[:width], b.ids[:width]
+		clear(occ)
+		for j := 0; j < band.len(); j++ {
+			occ[cells[band.index(j)].Col-lo] = true
+		}
+		groups := int32(0)
+		for c := range occ {
+			if occ[c] {
+				if c == 0 || !occ[c-1] {
+					groups++
+				}
+				ids[c] = groups - 1
+			}
+		}
+		if groups == 1 {
+			out = append(out, band)
+			continue
+		}
+		// Side by side: the band's cells are dealt out to the column
+		// groups, keeping their order.
+		changed = true
+		counts := make([]int, groups+1)
+		for j := 0; j < band.len(); j++ {
+			counts[ids[cells[band.index(j)].Col-lo]+1]++
+		}
+		for k := 1; k <= int(groups); k++ {
+			counts[k] += counts[k-1]
+		}
+		list := make([]int32, band.len())
+		next := append([]int(nil), counts[:groups]...)
+		for j := 0; j < band.len(); j++ {
+			i := band.index(j)
+			k := ids[cells[i].Col-lo]
+			list[next[k]] = int32(i)
+			next[k]++
+		}
+		for k := 0; k < int(groups); k++ {
+			out = append(out, group{list: list[counts[k]:counts[k+1]:counts[k+1]]})
+		}
+	}
+	return out, changed
+}
+
+// table writes a group of cells as a table block, or as several if it is
+// very large. at is the rectangle of a declared table; nil takes the
+// rectangle the cells span, and marks the table as inferred. It reports
+// false, having written nothing, if the rectangle is so much larger than
+// the cells in it that filling it would cost memory out of proportion.
+func (b *builder) table(g group, at *Rect, headerRows int, name, role string) bool {
+	if b.full {
+		return true // the cells stay out: the sheet is cut off
+	}
+	cells := b.sh.Cells
+	n := g.len()
+	var r Rect
+	if at != nil {
+		r = *at
+	} else {
+		r = Rect{R0: cells[g.index(0)].Row, R1: cells[g.index(n-1)].Row, C0: MaxCols, C1: -1}
+		for i := 0; i < n; i++ {
+			c := cells[g.index(i)].Col
+			r.C0, r.C1 = min(r.C0, c), max(r.C1, c)
+		}
+	}
+	rows, cols := int64(r.R1-r.R0+1), int64(r.C1-r.C0+1)
+	if rows*cols > 16*int64(n)+4096 {
+		return false
+	}
+	perBlock := rows
+	if rows*cols > maxTableCells {
+		perBlock = max(maxTableCells/cols, 1)
+	}
+	next := 0 // the next cell of g to place
+	for top := int64(0); top < rows; top += perBlock {
+		height := min(perBlock, rows-top)
+		// What the block takes from the text budget: BlockCost, then row
+		// by row CellCost for each of its cells, filled or not, and the
+		// text of its cells. Where there is no room for all of its rows,
+		// the rows that fit are kept and the sheet is cut off there.
+		fit, details := int64(0), 0
+		if b.sh.Room.Take(gofastcore.BlockCost) {
+			first := r.R0 + int32(top)
+			for j := next; fit < height; fit++ {
+				row := first + int32(fit)
+				cost := gofastcore.CellCost * cols
+				for ; j < n && cells[g.index(j)].Row <= row; j++ {
+					if c := &cells[g.index(j)]; c.Row == row && c.Col >= r.C0 && c.Col <= r.C1 {
+						n, ok := b.sh.detailBytes(c)
+						cost += int64(len(c.Text)) + n
+						if ok {
+							details++
+						}
+					}
+				}
+				if !b.sh.Room.Take(int(min(cost, math.MaxInt32))) {
+					break
+				}
+			}
+		}
+		if fit < height {
+			b.full = true
+			if b.sh.Cut == "" {
+				b.sh.Cut = "the limit on the amount of text was reached"
+			}
+			if fit == 0 {
+				return true
+			}
+			height, rows = fit, top+fit
+		}
+		part := Rect{R0: r.R0 + int32(top), R1: r.R0 + int32(top+height) - 1, C0: r.C0, C1: r.C1}
+		flat := make([]string, height*cols)
+		t := &gofastcore.Table{Rows: make([][]string, height)}
+		if details > 0 {
+			t.Cells = make([]gofastcore.CellDetail, 0, details)
+		}
+		for i := range t.Rows {
+			t.Rows[i] = flat[int64(i)*cols : int64(i+1)*cols : int64(i+1)*cols]
+		}
+		if top == 0 {
+			t.HeaderRows = int(min(int64(headerRows), height))
+		}
+		id := int32(len(b.rects) + 1)
+		b.rects = append(b.rects, part)
+		var marks hiddenMarks
+		for ; next < n; next++ {
+			i := g.index(next)
+			c := &cells[i]
+			if c.Row > part.R1 {
+				break
+			}
+			if c.Row < part.R0 || c.Col < part.C0 || c.Col > part.C1 {
+				continue
+			}
+			t.Rows[c.Row-part.R0][c.Col-part.C0] = c.Text
+			if d, ok := b.sh.cellDetail(c, int(c.Row-part.R0), int(c.Col-part.C0)); ok {
+				t.Cells = append(t.Cells, d)
+			}
+			if b.owner != nil {
+				b.owner[i] = id
+			}
+			if c.Hidden != 0 {
+				marks.add(t, int(c.Row-part.R0), int(c.Col-part.C0), c.Hidden)
+			}
+		}
+		block := gofastcore.Block{Kind: gofastcore.KindTable, Table: t}
+		block.Loc.Range = RangeName(part)
+		if name != "" || role != "" {
+			// On every piece, so that each says what it is a piece of.
+			block.Attrs = map[string]string{}
+			if name != "" {
+				block.Attrs[gofastcore.AttrName] = name
+			}
+			if role != "" {
+				block.Attrs[gofastcore.AttrRole] = role
+			}
+		}
+		if at == nil {
+			block.Origin = gofastcore.OriginInferred
+		}
+		b.hide(&block, part)
+		b.out = append(b.out, Placed{Row: part.R0, Col: part.C0, Seq: len(b.out), Piece: top > 0, Block: block})
+	}
+	return true
+}
+
+// sparse writes a group that is too thinly filled to be a grid: each run
+// of cells side by side in a row becomes a table of one row.
+func (b *builder) sparse(g group) {
+	cells := b.sh.Cells
+	b.sh.Split++
+	start := 0
+	for i := 1; i <= g.len(); i++ {
+		if i < g.len() {
+			a, c := &cells[g.index(i-1)], &cells[g.index(i)]
+			if a.Row == c.Row && c.Col == a.Col+1 {
+				continue
+			}
+		}
+		b.table(g.slice(start, i), nil, 0, "", "")
+		start = i
+	}
+}
+
+// hiddenMarks collects the cells of a table whose text the file declares
+// not shown (a format that shows nothing, a hidden row or column) as
+// regions.
+// Cells side by side with the same reasons make one region as the table
+// is filled; settleMarks then joins identical regions in rows one under
+// another, so that a hidden column of a million cells is one region.
+type hiddenMarks struct {
+	last    int // the region the last marked cell went into, or 0 if none
+	row     int
+	col     int
+	reasons gofastcore.Display
+}
+
+func (m *hiddenMarks) add(t *gofastcore.Table, row, col int, reasons gofastcore.Display) {
+	if m.last > 0 && m.row == row && m.col+1 == col && m.reasons == reasons {
+		t.Display[m.last-1].ColSpan++
+		m.col = col
+		return
+	}
+	t.Display = append(t.Display, gofastcore.DisplayCells{Row: row, Col: col, RowSpan: 1, ColSpan: 1, Display: reasons})
+	m.last, m.row, m.col, m.reasons = len(t.Display), row, col, reasons
+}
+
+// settleMarks joins each region to an identical one that ends on the row
+// above. The regions arrive in row order and, within a row, in column
+// order.
+func settleMarks(t *gofastcore.Table) {
+	if len(t.Display) < 2 {
+		return
+	}
+	out := t.Display[:0]
+	var open, next []int // regions of out that end on the row above, and on this row; by column
+	for i := 0; i < len(t.Display); {
+		row := t.Display[i].Row
+		j := i
+		for j < len(t.Display) && t.Display[j].Row == row {
+			j++
+		}
+		k := 0
+		next = next[:0]
+		for _, h := range t.Display[i:j] {
+			for k < len(open) && out[open[k]].Col < h.Col {
+				k++
+			}
+			if k < len(open) {
+				if o := &out[open[k]]; o.Col == h.Col && o.ColSpan == h.ColSpan && o.Display == h.Display && o.Row+o.RowSpan == row {
+					o.RowSpan++
+					next = append(next, open[k])
+					continue
+				}
+			}
+			out = append(out, h)
+			next = append(next, len(out)-1)
+		}
+		open, next = next, open
+		i = j
+	}
+	t.Display = out
+}
+
+// hide marks the parts of a table that the sheet hides: hidden rows and
+// columns. Cells that hide their own text were marked as it was filled.
+func (b *builder) hide(block *gofastcore.Block, at Rect) {
+	t := block.Table
+	settleMarks(t)
+	rows, cols := int(at.R1-at.R0+1), int(at.C1-at.C0+1)
+	hr := b.sh.HiddenRows
+	i := sort.Search(len(hr), func(i int) bool { return hr[i] >= at.R0 })
+	for i < len(hr) && hr[i] <= at.R1 {
+		j := i
+		for j+1 < len(hr) && hr[j+1] == hr[j]+1 && hr[j+1] <= at.R1 {
+			j++
+		}
+		t.Display = append(t.Display, gofastcore.DisplayCells{Row: int(hr[i] - at.R0), Col: 0, RowSpan: j - i + 1, ColSpan: cols, Display: gofastcore.DisplayHidden})
+		i = j + 1
+	}
+	hc := b.sh.HiddenCols
+	for k := sort.Search(len(hc), func(k int) bool { return hc[k].Hi >= at.C0 }); k < len(hc) && hc[k].Lo <= at.C1; k++ {
+		lo, hi := max(hc[k].Lo, at.C0), min(hc[k].Hi, at.C1)
+		t.Display = append(t.Display, gofastcore.DisplayCells{Row: 0, Col: int(lo - at.C0), RowSpan: rows, ColSpan: int(hi - lo + 1), Display: gofastcore.DisplayHidden})
+	}
+	for _, h := range t.Display {
+		block.Display |= h.Display
+	}
+}
+
+// merges gives each merged range to the table that holds its first cell.
+// A merge with nothing in its first cell shows nothing and is left out.
+func (b *builder) merges() {
+	cells := b.sh.Cells
+	for _, m := range b.sh.Merges {
+		i := sort.Search(len(cells), func(i int) bool {
+			c := &cells[i]
+			return c.Row > m.R0 || c.Row == m.R0 && c.Col >= m.C0
+		})
+		if i >= len(cells) || cells[i].Row != m.R0 || cells[i].Col != m.C0 || b.owner[i] == 0 {
+			continue
+		}
+		at := b.rects[b.owner[i]-1]
+		// The part of the merge inside the table.
+		r1, c1 := min(m.R1, at.R1), min(m.C1, at.C1)
+		if r1 == m.R0 && c1 == m.C0 {
+			continue
+		}
+		t := b.out[b.owner[i]-1].Block.Table
+		t.Merges = append(t.Merges, gofastcore.Merge{Row: int(m.R0 - at.R0), Col: int(m.C0 - at.C0), RowSpan: int(r1 - m.R0 + 1), ColSpan: int(c1 - m.C0 + 1)})
+	}
+}
+
+// order puts the cells in reading order, by row and then by column, if
+// the file did not, and keeps the first of two cells written for one
+// place. It also puts the hidden columns in order, as runs that do not
+// touch.
+func (sh *Sheet) Order() {
+	if len(sh.HiddenCols) > 1 {
+		sort.Slice(sh.HiddenCols, func(i, j int) bool { return sh.HiddenCols[i].Lo < sh.HiddenCols[j].Lo })
+		kept := sh.HiddenCols[:1]
+		for _, c := range sh.HiddenCols[1:] {
+			if last := &kept[len(kept)-1]; c.Lo <= last.Hi+1 {
+				last.Hi = max(last.Hi, c.Hi)
+			} else {
+				kept = append(kept, c)
+			}
+		}
+		sh.HiddenCols = kept
+	}
+	if !sh.Unsorted {
+		return
+	}
+	sort.SliceStable(sh.Cells, func(i, j int) bool {
+		a, b := &sh.Cells[i], &sh.Cells[j]
+		return a.Row < b.Row || a.Row == b.Row && a.Col < b.Col
+	})
+	kept := sh.Cells[:0]
+	for i := range sh.Cells {
+		if n := len(kept); n > 0 && kept[n-1].Row == sh.Cells[i].Row && kept[n-1].Col == sh.Cells[i].Col {
+			continue
+		}
+		kept = append(kept, sh.Cells[i])
+	}
+	sh.Cells = kept
+	sort.Slice(sh.HiddenRows, func(i, j int) bool { return sh.HiddenRows[i] < sh.HiddenRows[j] })
+	rows := sh.HiddenRows[:0]
+	for i, r := range sh.HiddenRows {
+		if i == 0 || r != sh.HiddenRows[i-1] {
+			rows = append(rows, r)
+		}
+	}
+	sh.HiddenRows = rows
+}
+
+// refName writes a cell's place as a reference: column letters and row
+// number.
+func RefName(dst []byte, row, col int32) []byte {
+	var letters [3]byte
+	n := 0
+	for c := col + 1; c > 0; c = (c - 1) / 26 {
+		letters[n] = byte('A' + (c-1)%26)
+		n++
+	}
+	for n > 0 {
+		n--
+		dst = append(dst, letters[n])
+	}
+	return strconv.AppendInt(dst, int64(row)+1, 10)
+}
+
+func RangeName(r Rect) string {
+	var buf [24]byte
+	b := RefName(buf[:0], r.R0, r.C0)
+	b = append(b, ':')
+	b = RefName(b, r.R1, r.C1)
+	return string(b)
+}
+
+func CellName(row, col int32) string {
+	var buf [12]byte
+	return string(RefName(buf[:0], row, col))
+}
+
+// arrange puts blocks in the order of the cells they sit at; where two
+// sit at one cell, tables first, then notes, then what floats over the
+// sheet.
+func Arrange(blocks []Placed) []gofastcore.Block {
+	for i := range blocks {
+		blocks[i].Seq = i
+	}
+	sort.Slice(blocks, func(i, j int) bool {
+		a, b := &blocks[i], &blocks[j]
+		if a.Row != b.Row {
+			return a.Row < b.Row
+		}
+		if a.Col != b.Col {
+			return a.Col < b.Col
+		}
+		return a.Seq < b.Seq
+	})
+	out := make([]gofastcore.Block, len(blocks))
+	for i := range blocks {
+		out[i] = blocks[i].Block
+		// A later piece of a table split by rows continues the piece
+		// before it, and says so if that is still the block before it:
+		// another block may lie beside the table and come between.
+		if blocks[i].Piece && i > 0 && blocks[i-1].Seq == blocks[i].Seq-1 {
+			out[i].Continued = true
+		}
+	}
+	return out
+}

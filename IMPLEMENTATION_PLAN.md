@@ -428,6 +428,15 @@ On branch `phase-7-encryption`: encrypted files of the three formats, opened wit
 - **Not read**: the properties of an encrypted presentation, and of a Word document or workbook that encrypts them, which are in an encrypted stream of their own; such a file has the properties its plain streams hold, usually none.
 - msoffcrypto-tool was not needed as an oracle: the files with known passwords say in their text what they hold.
 
+### Phase 8: result (2026-11-22)
+
+On branch `phase-8-api-command`. Most of the API was written with Phase 1 (`Open`, `File`, `Parts`, `Part`, `Children`) and has carried every phase since; this phase closes it.
+
+- **`File.Sheets`** lists a workbook's sheets (number, name, hidden) without reading them, as go-fast-ooxml's does. go-fast-ooxml's `File.Rows`, which reads a very large sheet in bands of rows, has no counterpart: a sheet of these formats has 65,536 rows at most, and the workbook's stream is held in memory whole.
+- **The command's dispatcher**: a file embedded in a document is read by this library if it is a compound file of one of the three formats, and by go-fast-ooxml if it is a zip package or an encrypted Office Open XML package; which it is is decided from its first bytes. Anything else is listed with `child.unsupported`. The module now requires go-fast-ooxml v0.1.1, for the command only: `TestImportsStandardLibraryAndGoFastOnly` holds the library's packages to the standard library and go-fast-core.
+- **The exported declarations** are held to `testdata/api.txt` (`TestAPISnapshot`, from go-fast-ooxml): 5 warning codes, 3 defaults, `Extract`, `ExtractFile`, `Extractor` with `MaxCells`, `File` with 11 methods, `Sheet`.
+- **Examples** for a whole file, a part at a time, and a password; the package documentation says what the library does today.
+
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).
 
 ## 8. Risks

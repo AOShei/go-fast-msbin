@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"context"
@@ -187,5 +188,70 @@ func TestCommand(t *testing.T) {
 	}
 	if data, err := os.ReadFile(dest); err != nil || json.Unmarshal(data, &doc) != nil {
 		t.Errorf("-o: %v", err)
+	}
+}
+
+// docx is a small Word document in the Office Open XML format, written
+// here as the zip package it is.
+func docx(t *testing.T, text string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	z := zip.NewWriter(&buf)
+	for name, body := range map[string]string{
+		"[Content_Types].xml": `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
+		"_rels/.rels":         `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`,
+		"word/document.xml":   `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>` + text + `</w:t></w:r></w:p></w:body></w:document>`,
+	} {
+		w, err := z.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Write([]byte(body))
+	}
+	if err := z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// The command reads the files embedded in a document: one of the binary
+// formats with this library, an Office Open XML file with go-fast-ooxml,
+// told apart by their first bytes; anything else is listed.
+func TestCommandReadsEmbeddedFiles(t *testing.T) {
+	inner := msbintest.WordStreams(msbintest.DocFile{Main: []msbintest.DocPara{{Text: "In the binary format."}}})
+	streams := msbintest.WordStreams(msbintest.DocFile{Main: []msbintest.DocPara{{Text: "The outer document."}}})
+	streams["ObjectPool/_1000000001/Package"] = docx(t, "In the newer format.")
+	streams["ObjectPool/_1000000002/WordDocument"] = inner["WordDocument"]
+	streams["ObjectPool/_1000000002/1Table"] = inner["1Table"]
+	streams["ObjectPool/_1000000003/CONTENTS"] = []byte("%PDF-1.4 not an Office file")
+	path := filepath.Join(t.TempDir(), "outer.doc")
+	if err := os.WriteFile(path, msbintest.Compound(streams), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out, errs bytes.Buffer
+	if status := run(context.Background(), []string{"-quiet", path}, &out, &errs); status != 0 {
+		t.Fatalf("status %d: %s", status, errs.String())
+	}
+	var doc gofastcore.Document
+	if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Children) != 3 {
+		t.Fatalf("%d children", len(doc.Children))
+	}
+	text := func(d *gofastcore.Document) string {
+		if len(d.Parts) == 0 || len(d.Parts[0].Blocks) == 0 {
+			return ""
+		}
+		return d.Parts[0].Blocks[0].Text
+	}
+	if c := doc.Children[0]; c.Source.Format != "docx" || text(c) != "In the newer format." {
+		t.Errorf("the Office Open XML file: %+v %q %+v", c.Source, text(c), c.Warnings)
+	}
+	if c := doc.Children[1]; c.Source.Format != "doc" || text(c) != "In the binary format." {
+		t.Errorf("the binary file: %+v %q %+v", c.Source, text(c), c.Warnings)
+	}
+	if c := doc.Children[2]; len(c.Parts) != 0 || len(c.Warnings) == 0 || c.Warnings[0].Code != gofastcore.WarnChildUnsupported {
+		t.Errorf("the other file: %+v %+v", c.Source, c.Warnings)
 	}
 }

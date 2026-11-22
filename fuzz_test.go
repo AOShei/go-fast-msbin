@@ -62,6 +62,12 @@ func FuzzExtract(f *testing.F) {
 		msbintest.Sheet{Name: "S", Records: [][]byte{msbintest.LabelSST(0, 0, xfGeneral, 0), msbintest.MulRK(0, 1, xfTwo, 1, 2), msbintest.Comment(0, 0, 1, "A", "note")}},
 		msbintest.Sheet{Name: "T", State: 2, Records: [][]byte{msbintest.Number(0, 0, xfDate, 36526)}})
 	f.Add(msbintest.Compound(workbook))
+	// A workbook of Excel 95.
+	f.Add(msbintest.Compound(map[string][]byte{"Book": msbintest.Workbook5(
+		[][]byte{msbintest.CodePage(1251), msbintest.Font5("Arial"), msbintest.Format5(164, "0.0"), msbintest.XF5(0, 0), msbintest.XF5(0, 164)},
+		msbintest.Sheet{Name: "S", Records: [][]byte{msbintest.Label5(0, 0, 0, "\xcf\xf0"), msbintest.Number(0, 1, 1, 2.25), msbintest.Note5(0, 0, "note"),
+			msbintest.Formula5String(1, 0, 0, "x", msbintest.Cat(msbintest.PtgRef5(0, 0, true, true), msbintest.PtgStr5("x"), msbintest.PtgOp(8))),
+			msbintest.FormulaTokens(1, 1, 0, 9, msbintest.Cat(msbintest.PtgArea5(0, 1, 0, 0), msbintest.PtgAttrSum(), msbintest.PtgRef3d5(0, 0, 4, 2), msbintest.PtgOp(3)))}})}))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > 1<<20 {
 			return

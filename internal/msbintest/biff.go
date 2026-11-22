@@ -551,3 +551,93 @@ func DVList(ranges [][4]uint16, values []string, formula []byte, hideArrow bool)
 	}
 	return Rec(0x01BE, body...)
 }
+
+// SxView is a pivot table: the cells it fills (first and last row, first
+// and last column), the first row of its values, and its name.
+func SxView(rng [4]uint16, firstData uint16, name string) []byte {
+	n, chars := chars(name)
+	return Rec(0x00B0, Cat(U16(rng[0], rng[1], rng[2], rng[3], rng[0], firstData, rng[2], 0), make([]byte, 24), U16(uint16(n), 0), chars)...)
+}
+
+// Records of a workbook of Excel 5 or 95, whose strings are bytes in the
+// workbook's code page with no flags before them.
+
+// BOF5 begins a substream of such a workbook.
+func BOF5(kind uint16) []byte { return Rec(0x0809, U16(0x0500, kind, 0x096C, 0x07C9)...) }
+
+// CodePage says which code page the workbook's strings are in.
+func CodePage(cp uint16) []byte { return Rec(0x0042, U16(cp)...) }
+
+func Font5(name string) []byte {
+	return Rec(0x0031, Cat(U16(200, 0, 0x7FFF, 400, 0), []byte{0, 0, 0, 0, byte(len(name))}, []byte(name))...)
+}
+
+func Format5(id uint16, code string) []byte {
+	return Rec(0x041E, Cat(U16(id), []byte{byte(len(code))}, []byte(code))...)
+}
+
+func XF5(font, format uint16) []byte {
+	return Rec(0x00E0, Cat(U16(font, format, 0x0001, 0x0020), make([]byte, 8))...)
+}
+
+func Label5(row, col, xf uint16, text string) []byte {
+	return Rec(0x0204, Cat(U16(row, col, xf, uint16(len(text))), []byte(text))...)
+}
+
+// Note5 is a comment on a cell.
+func Note5(row, col uint16, text string) []byte {
+	return Rec(0x001C, Cat(U16(row, col, uint16(len(text))), []byte(text))...)
+}
+
+// Formula5String is a formula whose result is text, with tokens in the
+// layout of this version.
+func Formula5String(row, col, xf uint16, text string, rgce []byte) []byte {
+	head := Rec(0x0006, Cat(U16(row, col, xf), []byte{0, 0, 0, 0, 0, 0, 0xFF, 0xFF}, U16(0), U32(0), U16(uint16(len(rgce))), rgce)...)
+	return Cat(head, Rec(0x0207, Cat(U16(uint16(len(text))), []byte(text))...))
+}
+
+// PtgRef5 and PtgArea5 are references in the layout of this version: the
+// row in 14 bits with the flags above it, the column in a byte.
+func PtgRef5(row uint16, col byte, rowRel, colRel bool) []byte {
+	if rowRel {
+		row |= 0x8000
+	}
+	if colRel {
+		row |= 0x4000
+	}
+	return Cat([]byte{0x44}, U16(row), []byte{col})
+}
+
+func PtgArea5(r0, r1 uint16, c0, c1 byte) []byte {
+	return Cat([]byte{0x25}, U16(r0, r1), []byte{c0, c1})
+}
+
+// PtgStr5 is a string in the workbook's code page.
+func PtgStr5(s string) []byte { return Cat([]byte{0x17, byte(len(s))}, []byte(s)) }
+
+// PtgRef3d5 is a reference to a cell of sheets of this workbook, by
+// their places in it.
+func PtgRef3d5(first, last, row uint16, col byte) []byte {
+	return Cat([]byte{0x5A}, U16(0xFFFF), make([]byte, 8), U16(first, last, row), []byte{col})
+}
+
+// Workbook5 returns a workbook stream of Excel 5 or 95.
+func Workbook5(globals [][]byte, sheets ...Sheet) []byte {
+	head := Cat(BOF5(0x0005), Cat(globals...))
+	size := len(head) + len(EOF())
+	for _, s := range sheets {
+		size += 4 + 7 + len(s.Name)
+	}
+	var bodies [][]byte
+	for _, s := range sheets {
+		bodies = append(bodies, Cat(BOF5(0x0010), Cat(s.Records...), EOF()))
+	}
+	out := head
+	at := size
+	for i, s := range sheets {
+		out = append(out, Rec(0x0085, Cat(U32(uint32(at)), []byte{s.State, s.Kind, byte(len(s.Name))}, []byte(s.Name))...)...)
+		at += len(bodies[i])
+	}
+	out = append(out, EOF()...)
+	return append(out, Cat(bodies...)...)
+}

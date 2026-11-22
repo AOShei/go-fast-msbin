@@ -71,6 +71,21 @@ func (sh *sheet) object(b []byte) {
 	sh.wordArt()
 }
 
+// object5 reads an Obj record of Excel 5 or 95, which holds the object
+// itself: its kind, its number and the cell its top left corner is in
+// ([MS-XLS] of that version: a count, the kind, the number, flags, and
+// the anchor).
+func (sh *sheet) object5(b []byte) {
+	if len(b) < 18 {
+		return
+	}
+	sh.shape.props.Reset()
+	sh.shape.kind, sh.shape.id = le.Uint16(b[4:]), le.Uint16(b[6:])
+	sh.shape.col = min(int32(le.Uint16(b[10:])), grid.MaxCols-1)
+	sh.shape.row = int32(le.Uint16(b[14:]))
+	sh.objNote = false
+}
+
 // place adds a block at the cell the current shape is anchored to. It
 // reports false where there is no room for it.
 func (sh *sheet) place(b gofastcore.Block, cost int) bool {

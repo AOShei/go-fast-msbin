@@ -210,7 +210,7 @@ func (f *File) reader() (*session, error) {
 // reads whole: a workbook's records. The stream is no larger than the
 // file, which Limits.MaxInputBytes bounds.
 func (f *File) load() error {
-	if f.info.Format != detect.Xls || f.info.Version != detect.BIFF8 {
+	if f.info.Format != detect.Xls {
 		return nil
 	}
 	name := "Workbook"

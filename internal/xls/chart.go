@@ -493,7 +493,7 @@ func (sh *sheet) lookup(series []chartSeries) map[cellKey]string {
 		// The sheet is read as a sheet is, and only the cells of the
 		// ranges are kept.
 		other := &sheet{b: sh.b, ctx: sh.ctx, index: index, unread: map[string]int{}, rowAt: -1, last: pos{-1, -1}}
-		other.c.data = sh.b.data
+		other.c.data, other.c.cp = sh.b.data, sh.b.cp
 		other.only = rects
 		other.found = map[pos]string{}
 		other.read(place.pos)

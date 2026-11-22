@@ -71,16 +71,21 @@ type Book struct {
 	opts     *gofastcore.Options
 	cfg      Config
 	date1904 bool
-	refs     []sheetRef
-	styles   []cellStyle
-	text     string   // the shared strings, one after another
-	ends     []uint32 // where each ends in text
+	// biff5 says the workbook is of Excel 5 or 95, whose strings are
+	// bytes in the code page cp.
+	biff5  bool
+	cp     int
+	refs   []sheetRef
+	styles []cellStyle
+	text   string   // the shared strings, one after another
+	ends   []uint32 // where each ends in text
 	// rich has, for the shared strings that change font partway, where
 	// each change is and which symbol font the text is in from there, if
 	// it is one. It is kept only for a workbook that has a symbol font.
-	rich    map[uint32][]fontRun
-	fonts   []symbol.Font
-	removed int // control characters removed from shared strings
+	rich      map[uint32][]fontRun
+	fonts     []symbol.Font
+	removed   int // control characters removed from shared strings
+	undecoded int // characters of the names of sheets and formats that their code page does not define
 
 	// places is where the records of each sheet begin, and how many bytes
 	// of them there are at most, in the order of the BoundSheet records.
@@ -143,6 +148,11 @@ func (b *Book) globals() {
 		b.damaged = append(b.damaged, "Workbook")
 		return
 	}
+	// The version's high byte says which generation wrote the workbook.
+	if len(c.b) >= 2 && le.Uint16(c.b)>>8 == 5 {
+		b.biff5, b.cp = true, 1252
+		c.cp = b.cp
+	}
 	ended := false
 	for at = c.next; !ended; at = c.next {
 		typ, ok := c.record(at)
@@ -155,6 +165,21 @@ func (b *Book) globals() {
 			ended = true
 		case recDateMode:
 			b.date1904 = len(body) >= 2 && le.Uint16(body) != 0
+		case recCodePage:
+			// The code page of the workbook's strings, for a workbook
+			// that keeps them in one ([MS-XLS] 2.4.52): two values stand
+			// for the Macintosh's and for Windows'.
+			if b.biff5 && len(body) >= 2 {
+				switch cp := int(le.Uint16(body)); cp {
+				case 0x8000:
+					b.cp = 10000
+				case 0x8001:
+					b.cp = 1252
+				default:
+					b.cp = cp
+				}
+				c.cp = b.cp
+			}
 		case recFont:
 			// The font's name follows fourteen bytes of its properties
 			// ([MS-XLS] 2.4.122).
@@ -180,7 +205,11 @@ func (b *Book) globals() {
 				continue
 			}
 			c.b = body[2:]
-			if code, ok := c.str(scratch[:0]); ok {
+			read := c.str
+			if b.biff5 {
+				read = c.shortStr // its length is in a byte
+			}
+			if code, ok := read(scratch[:0]); ok {
 				// Text a format writes into a cell is text like any other.
 				codes[int(le.Uint16(body))], _ = clean.String(code, clean.Ligatures)
 				scratch = code
@@ -243,9 +272,19 @@ func (b *Book) globals() {
 		case recSupBook:
 			links.supBook(b, &c)
 		case recExternName:
-			links.externName(b, &c)
+			if !b.biff5 {
+				links.externName(b, &c)
+			}
 		case recExternSheet:
-			links.externSheet(b, body)
+			if b.biff5 {
+				// One record for each sheet formulas name outside this
+				// one; an encoded path is another file's.
+				if len(body) >= 2 && body[1] == 0x01 {
+					b.external++
+				}
+			} else {
+				links.externSheet(b, body)
+			}
 		case recName:
 			links.name(b, &c)
 		}
@@ -253,6 +292,8 @@ func (b *Book) globals() {
 	if !ended || c.short {
 		b.damaged = append(b.damaged, "Workbook")
 	}
+	b.undecoded = c.undecoded
+	b.formulas.BIFF5, b.formulas.CodePage = b.biff5, b.cp
 
 	formats := map[uint16]*numfmt.Format{}
 	b.styles = make([]cellStyle, len(xfs))
@@ -499,9 +540,18 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 		tallies = append(tallies[:len(tallies):len(tallies)], &unit.Tally{Unread: map[string]int{unreadFormula: b.unreadNames}})
 	}
 	out = append(out, unit.Summarize(tallies, b.damaged)...)
+	if b.undecoded > 0 {
+		out = append(out, gofastcore.Warning{Code: gofastcore.WarnTextUnmappedGlyphs, Severity: gofastcore.SeverityWarning,
+			Message: undecodedMessage(b.undecoded, b.cp)})
+	}
 	if b.removed > 0 {
 		out = append(out, gofastcore.Warning{Code: warn.ControlCharsRemoved, Severity: gofastcore.SeverityInfo,
 			Message: strconv.Itoa(b.removed) + " in shared strings and sheet names"})
 	}
 	return out
+}
+
+// undecodedMessage says how many characters a code page did not give.
+func undecodedMessage(n, cp int) string {
+	return strconv.Itoa(n) + " characters in code page " + strconv.Itoa(cp) + ", which it does not define or which is not known here, are U+FFFD"
 }

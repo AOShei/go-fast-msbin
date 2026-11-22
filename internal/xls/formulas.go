@@ -58,7 +58,7 @@ type linkReader struct {
 // supBook reads a SupBook record: this workbook, the add-ins, or another
 // file and its sheets ([MS-XLS] 2.4.271).
 func (l *linkReader) supBook(b *Book, c *cursor) {
-	if len(c.b) < 4 {
+	if len(c.b) < 4 || b.biff5 {
 		return
 	}
 	if len(l.links) >= warn.MaxExternalLinks {
@@ -174,9 +174,17 @@ func (l *linkReader) name(b *Book, c *cursor) {
 	}
 	const fBuiltin = 0x0020
 	flags, cch, cce, sheet := le.Uint16(body), int(body[3]), int(le.Uint16(body[4:])), int(le.Uint16(body[8:]))
-	// The name: a byte of flags and the characters.
-	c.b = body[15:]
-	raw, ok := c.chars(l.raw[:0], cch, body[14]&1 != 0)
+	var raw []byte
+	var ok bool
+	if b.biff5 {
+		// The name: bytes in the workbook's code page.
+		c.b = body[14:]
+		raw, ok = c.bytes(l.raw[:0], cch)
+	} else {
+		// The name: a byte of flags and the characters.
+		c.b = body[15:]
+		raw, ok = c.chars(l.raw[:0], cch, body[14]&1 != 0)
+	}
 	l.raw = raw
 	n := rawName{sheet: sheet}
 	if ok {
@@ -269,7 +277,7 @@ func (b *Book) readStored(ctx context.Context, index int) *unit.Result {
 func (b *Book) macroCode(ref sheetRef, room int64) (string, int) {
 	var sb strings.Builder
 	sh := &sheet{b: b}
-	sh.c.data = b.data
+	sh.c.data, sh.c.cp = b.data, b.cp
 	c := &sh.c
 	missed := 0
 	if typ, ok := c.record(ref.pos); !ok || typ != recBOF {

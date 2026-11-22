@@ -129,6 +129,9 @@ type sheet struct {
 	sawImage bool // the sheet has pictures that were not asked for
 	budget   bool // the limit on decoded bytes was reached
 
+	// The pivot tables the sheet declares.
+	declared []grid.Declared
+
 	// Drop-down lists (validation.go).
 	lists      []choiceList
 	listRanges int // the ranges of all of them
@@ -188,7 +191,7 @@ func errorText(code byte) string {
 func (b *Book) sheet(ctx context.Context, index int) *sheet {
 	ref := b.refs[index]
 	sh := &sheet{b: b, ctx: ctx, unread: map[string]int{}, rowAt: -1, last: pos{-1, -1}, index: ref.place}
-	sh.c.data = b.data
+	sh.c.data, sh.c.cp = b.data, b.cp
 	sh.room = gofastcore.TextBudgetFrom(ctx)
 	sh.g.Room = sh.room
 	part := &sh.part
@@ -296,7 +299,7 @@ func (sh *sheet) record(typ uint16) bool {
 	if sh.only != nil {
 		// A reading for cells: nothing else of the sheet is wanted.
 		switch typ {
-		case recMsoDrawing, recObj, recTxo, recNote, recDV, recHLink, recMergeCells, recRow, recColInfo, recDimensions, recWsBool:
+		case recMsoDrawing, recObj, recTxo, recNote, recDV, recHLink, recMergeCells, recRow, recColInfo, recDimensions, recWsBool, recSxView:
 			return true
 		}
 	}
@@ -418,9 +421,14 @@ func (sh *sheet) record(typ uint16) bool {
 		// 2.4.90): room is made for its cells at once, as many as that
 		// area and the bytes of the sheet's records can hold, so that
 		// the list of them is not grown and copied as it fills.
-		if len(b) >= 12 && len(sh.g.Cells) == 0 {
-			rows := int64(le.Uint32(b[4:])) - int64(le.Uint32(b))
-			cols := int64(le.Uint16(b[10:])) - int64(le.Uint16(b[8:]))
+		if len(b) >= 10 && len(sh.g.Cells) == 0 {
+			rows := int64(le.Uint16(b[2:])) - int64(le.Uint16(b))
+			cols := int64(le.Uint16(b[6:])) - int64(le.Uint16(b[4:]))
+			if len(b) >= 12 {
+				// As Excel 97 and later write it, with rows in 32 bits.
+				rows = int64(le.Uint32(b[4:])) - int64(le.Uint32(b))
+				cols = int64(le.Uint16(b[10:])) - int64(le.Uint16(b[8:]))
+			}
 			if n := min(rows*cols, int64(sh.size/minCellBytes), maxReserve); rows > 0 && cols > 0 && n > 0 {
 				sh.g.Cells = make([]grid.Cell, 0, n)
 			}
@@ -463,7 +471,11 @@ func (sh *sheet) record(typ uint16) bool {
 	case recMsoDrawing:
 		sh.drawing(b)
 	case recObj:
-		sh.object(b)
+		if sh.b.biff5 {
+			sh.object5(b)
+		} else {
+			sh.object(b)
+		}
 	case recTxo:
 		if sh.objNote {
 			sh.textObject(b)
@@ -471,9 +483,49 @@ func (sh *sheet) record(typ uint16) bool {
 			sh.shapeText(b)
 		}
 	case recNote:
-		sh.note(b)
+		if sh.b.biff5 {
+			sh.note5(b)
+		} else {
+			sh.note(b)
+		}
 	case recDV:
 		sh.validation(b)
+	case recSxView:
+		// A pivot table: the cells it fills, the first row of its values
+		// and its name ([MS-XLS] 2.4.313). Its cells are cells of the
+		// sheet; the table says which, and that they are one table.
+		if len(b) < 44 {
+			break
+		}
+		if len(sh.declared) >= warn.MaxPivotTables {
+			sh.lost.Add(warn.CapPivotTables, 1)
+			break
+		}
+		t := grid.Declared{Role: gofastcore.RolePivot,
+			At: grid.Rect{R0: int32(le.Uint16(b)), R1: int32(le.Uint16(b[2:])), C0: int32(le.Uint16(b[4:])), C1: int32(le.Uint16(b[6:]))}}
+		if t.At.R0 > t.At.R1 || t.At.C0 > t.At.C1 || t.At.C1 >= grid.MaxCols {
+			break
+		}
+		// The rows above the first row of values are its headers: the
+		// labels of the column fields.
+		if first := int32(le.Uint16(b[10:])); first > t.At.R0 {
+			t.HeaderRows = int(min(first-t.At.R0, t.At.R1-t.At.R0+1))
+		}
+		if cch := int(le.Uint16(b[40:])); cch > 0 && len(b) > 44 {
+			var raw []byte
+			if sh.b.biff5 {
+				c.b = b[44:]
+				raw, _ = c.bytes(sh.raw[:0], cch)
+			} else {
+				c.b = b[45:]
+				raw, _ = c.chars(sh.raw[:0], cch, b[44]&1 != 0)
+			}
+			sh.raw = raw
+			name, removed := clean.String(raw, clean.Prose)
+			sh.removed += removed
+			t.Name = sh.lost.Name(name)
+		}
+		sh.declared = append(sh.declared, t)
 	}
 	return true
 }
@@ -730,7 +782,7 @@ func (sh *sheet) blocks() {
 	if len(sh.details) > 0 || sh.linkAt != nil || sh.links != nil {
 		g.Details = sh
 	}
-	blocks := g.Regions(nil)
+	blocks := g.Regions(sh.declared)
 	blocks = append(blocks, sh.comments()...)
 	blocks = append(blocks, sh.choices()...)
 	blocks = append(blocks, sh.floating...)
@@ -780,6 +832,9 @@ func (sh *sheet) finish() {
 	}
 	if sh.unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(sh.unmapped))
+	}
+	if sh.c.undecoded > 0 {
+		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, undecodedMessage(sh.c.undecoded, sh.b.cp))
 	}
 	part.Finish()
 }

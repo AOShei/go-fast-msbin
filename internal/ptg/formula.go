@@ -8,6 +8,8 @@ import (
 	"sync"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/AOShei/go-fast-msbin/internal/codepage"
 )
 
 // Package ptg turns the compiled formulas of a workbook in the binary
@@ -30,6 +32,12 @@ type Book struct {
 	Sheets []string
 	Links  []Link
 	XTI    []XTI
+
+	// BIFF5 says the formulas are those of Excel 5 and 95: rows in 14
+	// bits and columns in 8, strings of bytes in the code page CodePage,
+	// and references to other sheets that name them in the token itself.
+	BIFF5    bool
+	CodePage int
 }
 
 // Link is one entry of the workbook's list of supporting links (SupBook):
@@ -86,8 +94,9 @@ const (
 // The size of a sheet of this format, at whose edges a relative
 // reference wraps round.
 const (
-	maxRows = 1 << 16
-	maxCols = 1 << 8
+	maxRows  = 1 << 16
+	maxRows5 = 1 << 14 // of Excel 5 and 95
+	maxCols  = 1 << 8
 )
 
 // Place is where a formula is: the cell whose formula it is, or for a
@@ -258,7 +267,12 @@ func (p *parser) base(t byte) {
 		p.push("")
 	case t == 0x17: // a string: a count of characters, a byte of flags
 		n := int(p.u8())
-		s := p.chars(n, p.u8(), p.take)
+		var s string
+		if p.book.BIFF5 {
+			s, _ = codepage.Decode(p.book.CodePage, p.take(n))
+		} else {
+			s = p.chars(n, p.u8(), p.take)
+		}
 		p.push(`"` + strings.ReplaceAll(s, `"`, `""`) + `"`)
 	case t == 0x19:
 		p.attr()
@@ -353,6 +367,11 @@ func (p *parser) classified(t byte) {
 		}
 		p.call(name, n)
 	case 0x03: // a defined name
+		if p.book.BIFF5 {
+			p.push(p.name(int64(p.u16())))
+			p.take(12)
+			return
+		}
 		p.push(p.name(int64(p.u32())))
 	case 0x04:
 		row, col := p.loc()
@@ -363,16 +382,20 @@ func (p *parser) classified(t byte) {
 	case 0x06: // what an area refers to, worked out ahead (PtgMemArea)
 		p.take(6)
 		n := int(binary.LittleEndian.Uint16(p.takeExtra(2)))
-		p.takeExtra(8 * n)
+		if p.book.BIFF5 {
+			p.takeExtra(6 * n)
+		} else {
+			p.takeExtra(8 * n)
+		}
 	case 0x07, 0x08:
 		p.take(6)
 	case 0x09, 0x0E, 0x0F:
 		p.take(2)
 	case 0x0A:
-		p.take(4)
+		p.take(p.refSize())
 		p.push("#REF!")
 	case 0x0B:
-		p.take(8)
+		p.take(p.areaSize())
 		p.push("#REF!")
 	case 0x0C:
 		row, col := p.loc()
@@ -381,6 +404,20 @@ func (p *parser) classified(t byte) {
 		r0, r1, c0, c1 := p.area()
 		p.push(p.rangeText(r0, r1, c0, c1, true))
 	case 0x19: // a name of another book, or of this one through its links
+		if p.book.BIFF5 {
+			// The link, then the name's number: of this workbook's names
+			// where the link says so ([MS-XLS] of that version).
+			ixals := int16(p.u16())
+			p.take(8)
+			i := int64(p.u16())
+			p.take(12)
+			if ixals >= 0 {
+				p.bad = true // a name of another workbook
+				return
+			}
+			p.push(p.name(i))
+			return
+		}
 		_, l := p.link(int(p.u16()))
 		i := int64(p.u32())
 		if l == nil {
@@ -416,11 +453,11 @@ func (p *parser) classified(t byte) {
 		p.push(sheets + p.rangeText(r0, r1, c0, c1, false))
 	case 0x1C:
 		sheets := p.sheets()
-		p.take(4)
+		p.take(p.refSize())
 		p.push(sheets + "#REF!")
 	case 0x1D:
 		sheets := p.sheets()
-		p.take(8)
+		p.take(p.areaSize())
 		p.push(sheets + "#REF!")
 	default:
 		p.bad = true
@@ -449,12 +486,40 @@ type ref struct {
 	relative bool
 }
 
+// refSize and areaSize are the bytes of a reference to a cell and to a
+// range.
+func (p *parser) refSize() int {
+	if p.book.BIFF5 {
+		return 3
+	}
+	return 4
+}
+
+func (p *parser) areaSize() int {
+	if p.book.BIFF5 {
+		return 6
+	}
+	return 8
+}
+
 func (p *parser) loc() (row, col ref) {
+	if p.book.BIFF5 {
+		// The row in 14 bits with the two flags above it, the column in
+		// a byte.
+		r, c := p.u16(), p.u8()
+		return ref{int32(r & 0x3FFF), r&0x8000 != 0}, ref{int32(c), r&0x4000 != 0}
+	}
 	r, c := p.u16(), p.u16()
 	return ref{int32(r), c&0x8000 != 0}, ref{int32(c & 0xFF), c&0x4000 != 0}
 }
 
 func (p *parser) area() (r0, r1, c0, c1 ref) {
+	if p.book.BIFF5 {
+		a, b := p.u16(), p.u16()
+		c, d := p.u8(), p.u8()
+		return ref{int32(a & 0x3FFF), a&0x8000 != 0}, ref{int32(b & 0x3FFF), b&0x8000 != 0},
+			ref{int32(c), a&0x4000 != 0}, ref{int32(d), b&0x4000 != 0}
+	}
 	a, b := p.u16(), p.u16()
 	c, d := p.u16(), p.u16()
 	return ref{int32(a), c&0x8000 != 0}, ref{int32(b), d&0x8000 != 0},
@@ -464,7 +529,14 @@ func (p *parser) area() (r0, r1, c0, c1 ref) {
 // resolve turns a reference of a shared formula or a name, whose relative
 // parts are offsets from where it is used, into a place on the sheet.
 func (p *parser) resolve(row, col ref) (ref, ref) {
-	if row.relative {
+	if row.relative && p.book.BIFF5 {
+		// An offset in 14 bits.
+		off := row.n
+		if off&0x2000 != 0 {
+			off -= 0x4000
+		}
+		row.n = wrap(p.at.Row+off, maxRows5)
+	} else if row.relative {
 		row.n = wrap(p.at.Row+int32(int16(row.n)), maxRows)
 	}
 	if col.relative {
@@ -498,7 +570,7 @@ func (p *parser) rangeText(r0, r1, c0, c1 ref, offset bool) string {
 	}
 	var b []byte
 	switch {
-	case r0.n == 0 && r1.n == maxRows-1:
+	case r0.n == 0 && (r1.n == maxRows-1 || p.book.BIFF5 && r1.n == maxRows5-1):
 		// Whole columns.
 		b = appendCol(b, c0)
 		b = append(b, ':')
@@ -545,6 +617,22 @@ func appendRow(b []byte, r ref) []byte {
 // sheets reads the sheets a 3-D reference is to, written as its prefix:
 // "Sheet1!", "'My sheet'!", "Sheet1:Sheet3!".
 func (p *parser) sheets() string {
+	if p.book.BIFF5 {
+		// The link, eight bytes not used, and the first and last sheet,
+		// which are this workbook's where the link says so.
+		ixals := int16(p.u16())
+		p.take(8)
+		first, last := int32(p.u16()), int32(p.u16())
+		if ixals >= 0 {
+			p.bad = true // sheets of another workbook
+			return ""
+		}
+		n := int32(len(p.book.Sheets))
+		if first >= n || last >= n {
+			return "#REF!"
+		}
+		return quote("", sheetSpan(p.book.Sheets, XTI{First: first, Last: last})) + "!"
+	}
 	x, l := p.link(int(p.u16()))
 	if l == nil {
 		return ""
@@ -693,8 +781,13 @@ func (p *parser) array() {
 			case 0x01:
 				b.WriteString(number(math.Float64frombits(binary.LittleEndian.Uint64(p.takeExtra(8)))))
 			case 0x02:
-				n := int(binary.LittleEndian.Uint16(p.takeExtra(2)))
-				s := p.chars(n, p.takeExtra(1)[0], p.takeExtra)
+				var s string
+				if p.book.BIFF5 {
+					s, _ = codepage.Decode(p.book.CodePage, p.takeExtra(int(p.takeExtra(1)[0])))
+				} else {
+					n := int(binary.LittleEndian.Uint16(p.takeExtra(2)))
+					s = p.chars(n, p.takeExtra(1)[0], p.takeExtra)
+				}
 				b.WriteString(`"` + strings.ReplaceAll(s, `"`, `""`) + `"`)
 			case 0x04:
 				if p.takeExtra(8)[0] != 0 {

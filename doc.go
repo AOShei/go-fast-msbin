@@ -4,8 +4,9 @@
 // to 2003 wrote them, with their templates and shows. Their
 // gofastcore.Source.Format is doc, xls and ppt.
 //
-// The library is in development. Excel workbooks are read: one sheet part
-// per sheet, its cells as tables. A Word document or a presentation gives
+// The library is in development. Excel workbooks are read, of Excel 97 to
+// 2003 and of Excel 5 and 95: one sheet part per sheet, its cells as
+// tables. A Word document or a presentation gives
 // a document with its properties, the source of its macros (in the stored
 // part) and its embedded files (Children); its text is not read yet, and
 // its part says so with part.failed. IMPLEMENTATION_PLAN.md says what is

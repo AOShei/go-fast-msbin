@@ -3,6 +3,7 @@ package msbintest
 import (
 	"encoding/binary"
 	"math"
+	"strings"
 	"unicode/utf16"
 )
 
@@ -528,4 +529,25 @@ func Name(name string, sheet uint16, builtin int, rgce []byte, extra ...byte) []
 		flags, chars, count = 0x0020, []byte{0, byte(builtin)}, 1
 	}
 	return Rec(0x0018, Cat(U16(flags), []byte{0, byte(count)}, U16(uint16(len(rgce)), 0, sheet), make([]byte, 4), chars, rgce, extra)...)
+}
+
+// DVList is a drop-down list for the cells of the ranges (a data
+// validation of type list): its values written out, or, if values is
+// nil, the formula they come from. hideArrow hides the arrow.
+func DVList(ranges [][4]uint16, values []string, formula []byte, hideArrow bool) []byte {
+	flags := uint32(3) | 0x100
+	if values != nil {
+		flags |= 0x80
+		n, body := chars(strings.Join(values, "\x00"))
+		formula = Cat([]byte{0x17, byte(n)}, body)
+	}
+	if hideArrow {
+		flags |= 0x200
+	}
+	empty := Cat(U16(1), []byte{0, 0})
+	body := Cat(U32(flags), empty, empty, empty, empty, U16(uint16(len(formula)), 0), formula, U16(0, 0), U16(uint16(len(ranges))))
+	for _, r := range ranges {
+		body = append(body, U16(r[0], r[1], r[2], r[3])...)
+	}
+	return Rec(0x01BE, body...)
 }

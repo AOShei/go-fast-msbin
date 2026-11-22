@@ -56,7 +56,8 @@ func cellsOf(t testing.TB, part *gofastcore.Part) map[[2]int]shownCell {
 	out := map[[2]int]shownCell{}
 	for i := range part.Blocks {
 		b := &part.Blocks[i]
-		if b.Kind != gofastcore.KindTable || b.Table == nil {
+		// The table of a chart's data is not cells of the sheet.
+		if b.Kind != gofastcore.KindTable || b.Table == nil || b.Attrs[gofastcore.AttrRole] == gofastcore.RoleChart {
 			continue
 		}
 		r0, c0, ok := topLeft(b.Loc.Range)

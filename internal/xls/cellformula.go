@@ -1,6 +1,7 @@
 package xls
 
 import (
+	"github.com/AOShei/go-fast-msbin/internal/clean"
 	"github.com/AOShei/go-fast-msbin/internal/ptg"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
 )
@@ -8,6 +9,21 @@ import (
 // The formulas of cells, read back as text with Options.Cells. A formula
 // that cannot be read back is left out and counted: wrong text would be
 // worse than none.
+
+// formulaText reads a compiled formula back as text, in the shared
+// model's form: valid UTF-8 with no control characters, which a string in
+// a formula may hold.
+func formulaText(rgce, extra []byte, book *ptg.Book, at ptg.Place) (string, bool) {
+	text, ok := ptg.Formula(rgce, extra, book, at)
+	if !ok {
+		return "", false
+	}
+	if clean.Plain([]byte(text)) {
+		return text, true
+	}
+	text, _ = clean.String([]byte(text), clean.Verbatim)
+	return text, true
+}
 
 // sharedFormula is a formula several cells share: written once, with
 // references relative to the cell that uses it ([MS-XLS] 2.4.260).
@@ -30,9 +46,9 @@ const (
 	formulaNone   // the cell has no formula of its own: part of an array, or a what-if table
 )
 
-// formulaText reads the formula of a Formula record back, for the cell at
+// recordFormula reads the formula of a Formula record back, for the cell at
 // row and col.
-func (sh *sheet) formulaText(b []byte, row, col int32) (string, int) {
+func (sh *sheet) recordFormula(b []byte, row, col int32) (string, int) {
 	if len(b) < 22 {
 		return "", formulaUnread
 	}
@@ -49,7 +65,7 @@ func (sh *sheet) formulaText(b []byte, row, col int32) (string, int) {
 			// An array formula: the cell that begins it has it.
 			return "", formulaNone
 		case known:
-			text, ok := ptg.Formula(f.rgce, f.extra, &sh.b.formulas, ptg.Place{Row: row, Col: col})
+			text, ok := formulaText(f.rgce, f.extra, &sh.b.formulas, ptg.Place{Row: row, Col: col})
 			if !ok {
 				return "", formulaUnread
 			}
@@ -61,7 +77,7 @@ func (sh *sheet) formulaText(b []byte, row, col int32) (string, int) {
 	if len(rgce) > 0 && rgce[0] == 0x02 {
 		return "", formulaNone // a cell of a what-if table
 	}
-	text, ok := ptg.Formula(rgce, extra, &sh.b.formulas, ptg.Place{Row: row, Col: col})
+	text, ok := formulaText(rgce, extra, &sh.b.formulas, ptg.Place{Row: row, Col: col})
 	if !ok {
 		return "", formulaUnread
 	}
@@ -72,7 +88,7 @@ func (sh *sheet) formulaText(b []byte, row, col int32) (string, int) {
 // back.
 func (sh *sheet) cellFormula(b []byte, row, col int32) {
 	sh.waiting = nil
-	text, state := sh.formulaText(b, row, col)
+	text, state := sh.recordFormula(b, row, col)
 	switch state {
 	case formulaRead:
 		sh.formula = text
@@ -134,7 +150,7 @@ func (sh *sheet) arrayFormula(b []byte) {
 
 // settle gives the cell that was waiting its formula.
 func (sh *sheet) settle(w *detailRef, f sharedFormula) {
-	text, ok := ptg.Formula(f.rgce, f.extra, &sh.b.formulas, ptg.Place{Row: w.at.row, Col: w.at.col})
+	text, ok := formulaText(f.rgce, f.extra, &sh.b.formulas, ptg.Place{Row: w.at.row, Col: w.at.col})
 	if !ok {
 		sh.unreadFormulas++
 		return
@@ -172,7 +188,7 @@ func (sh *sheet) sharedAfter(row, col int32) (string, int) {
 		if len(sh.shared) < warn.MaxSharedFormulas {
 			sh.shared[w.base] = f
 		}
-		text, ok := ptg.Formula(f.rgce, f.extra, &sh.b.formulas, ptg.Place{Row: row, Col: col})
+		text, ok := formulaText(f.rgce, f.extra, &sh.b.formulas, ptg.Place{Row: row, Col: col})
 		if !ok {
 			return "", formulaUnread
 		}
@@ -190,7 +206,7 @@ func (sh *sheet) sharedAfter(row, col int32) (string, int) {
 		if len(sh.shared) < warn.MaxSharedFormulas {
 			sh.shared[w.base] = sharedFormula{}
 		}
-		text, ok := ptg.Formula(b[14:14+cce], b[14+cce:], &sh.b.formulas, ptg.Place{Row: row, Col: col})
+		text, ok := formulaText(b[14:14+cce], b[14+cce:], &sh.b.formulas, ptg.Place{Row: row, Col: col})
 		if !ok {
 			return "", formulaUnread
 		}

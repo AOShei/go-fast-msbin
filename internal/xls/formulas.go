@@ -211,7 +211,7 @@ func (l *linkReader) finish(b *Book) {
 		if len(n.rgce) == 0 {
 			continue // a name with no formula: of a macro's procedure
 		}
-		text, ok := ptg.Formula(n.rgce, n.extra, f, ptg.Place{})
+		text, ok := formulaText(n.rgce, n.extra, f, ptg.Place{})
 		if !ok || text == "" {
 			b.unreadNames++
 			continue
@@ -294,7 +294,7 @@ func (b *Book) macroCode(ref sheetRef, room int64) (string, int) {
 				continue
 			}
 			row, col := int32(le.Uint16(c.b)), int32(le.Uint16(c.b[2:]))
-			text, state := sh.formulaText(c.b, row, col)
+			text, state := sh.recordFormula(c.b, row, col)
 			if state == formulaWaits {
 				// The formula is shared: it follows.
 				text, state = sh.sharedAfter(row, col)

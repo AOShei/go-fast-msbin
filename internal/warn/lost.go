@@ -43,6 +43,16 @@ const (
 	CapExternalSheets
 	CapSheetRefs
 	CapSharedFormulas
+	CapChoiceLists
+	CapChoiceRanges
+	CapChartSeries
+	CapChartPoints
+	CapChartTitle
+	CapChartTotal
+	CapCharts
+	CapShapes
+	CapPictures
+	CapChartLookup
 	numCaps
 )
 
@@ -79,6 +89,16 @@ var caps = [numCaps]capInfo{
 	CapExternalNames:  {"names of a linked workbook past " + itoa(MaxExternalNames) + " were not read; formulas that use them are not read back", "name", "names"},
 	CapExternalSheets: {"sheets of a linked workbook past " + itoa(MaxExternalNames) + " were not read; formulas that use them are not read back", "sheet", "sheets"},
 	CapSheetRefs:      {"references of the workbook's formulas to other sheets past " + itoa(MaxSheetRefs) + " were not read; formulas that use them are not read back", "reference", "references"},
+	CapChoiceLists:    {"drop-down lists of a sheet past " + itoa(MaxChoiceLists) + " were not read", "list", "lists"},
+	CapChoiceRanges:   {"ranges of a sheet's drop-down lists past " + itoa(MaxChoiceRanges) + " were not read", "range", "ranges"},
+	CapChartSeries:    {"chart series past " + itoa(MaxChartSeries) + " were not read", "series", "series"},
+	CapChartPoints:    {"chart points at an index past " + itoa(MaxChartPoints) + " were not read", "point", "points"},
+	CapChartTitle:     {"chart and series titles longer than " + itoa(MaxChartTitle) + " bytes were cut there", "title", "titles"},
+	CapChartTotal:     {"charts holding more than " + itoa(MaxChartTotal) + " points were cut there", "chart", "charts"},
+	CapCharts:         {"charts of a sheet past " + itoa(MaxCharts) + " were not read", "chart", "charts"},
+	CapShapes:         {"shapes of a sheet with text past " + itoa(MaxShapes) + " were not read", "shape", "shapes"},
+	CapPictures:       {"pictures of the document past " + itoa(MaxPictures) + " were not read; shapes that show them are given with no picture", "picture", "pictures"},
+	CapChartLookup:    {"charts whose data is in sheets of more than " + itoa(MaxChartLookup>>20) + " MiB in all were given with what the charts keep of it, not with what the cells show", "chart", "charts"},
 	CapSharedFormulas: {"shared formulas of a sheet past " + itoa(MaxSharedFormulas) + " were not kept; cells that use them give no formula", "formula", "formulas"},
 }
 
@@ -109,6 +129,16 @@ const (
 	MaxExternalNames  = 1 << 16
 	MaxSheetRefs      = 1 << 16
 	MaxSharedFormulas = 1 << 20
+	MaxChoiceLists    = 1 << 14
+	MaxChoiceRanges   = 1 << 18
+	MaxChartSeries    = 1 << 10
+	MaxChartPoints    = 1 << 20
+	MaxChartTitle     = 4096
+	MaxChartTotal     = 1 << 21
+	MaxCharts         = 1 << 12
+	MaxChartLookup    = 256 << 20
+	MaxShapes         = 1 << 16
+	MaxPictures       = 1 << 16
 )
 
 // Message is the text of the warning for n items a bound left out.

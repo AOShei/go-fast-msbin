@@ -97,6 +97,33 @@ func FuzzWorkbook(f *testing.F) {
 	f.Add(msbintest.Workbook(globals, msbintest.Sheet{Name: "S", Records: recs}, msbintest.Sheet{Name: "T", State: 1, Records: recs},
 		msbintest.Sheet{Name: "C", Kind: 2}, msbintest.Sheet{Name: "M", Kind: 1, Records: recs}))
 	f.Add(msbintest.Workbook(nil))
+	// Formulas, names, links, lists, shapes, pictures and charts.
+	m := msbintest.Cat
+	links := [][]byte{msbintest.SupBookSelf(2), msbintest.SupBookFile("\x01C:\\other.xls", "Data"), msbintest.ExternName("Rate", 0),
+		msbintest.ExternSheet([3]uint16{0, 0, 0}, [3]uint16{1, 0, 0}), msbintest.Name("Total", 0, -1, msbintest.PtgArea3d(0, 0, 9, 0, 0)),
+		msbintest.Name("", 1, 6, msbintest.PtgArea3d(0, 0, 4, 0, 2)), msbintest.DrawingGroup(msbintest.PNG(2, 2))}
+	chart := msbintest.Chart([][]byte{
+		msbintest.ChartSeries("S", msbintest.PtgArea3d(0, 0, 2, 1, 1), msbintest.PtgArea3d(0, 0, 2, 0, 0)),
+		msbintest.ChartType(0x1017, msbintest.U16(0, 150, 0), true), msbintest.ChartTitle("T", 1),
+	}, msbintest.ChartCache(1, msbintest.Number(0, 0, 0, 1.5)), msbintest.ChartCache(2, msbintest.Label(0, 0, 0, "a")))
+	rich := [][]byte{
+		msbintest.MulRK(0, 0, xfGeneral, 1, 2), msbintest.MulRK(1, 0, xfGeneral, 3, 4),
+		msbintest.FormulaTokens(2, 0, xfGeneral, 3, m(msbintest.PtgRef3d(0, 0, 0), msbintest.PtgName(1), msbintest.PtgOp(3), msbintest.PtgNameX(1, 1), msbintest.PtgOp(3))),
+		msbintest.FormulaTokens(3, 0, xfGeneral, 3, msbintest.PtgExp(3, 0)),
+		msbintest.ShrFmla(3, 4, 0, 0, m(msbintest.PtgRefN(-1, 0, true, true), msbintest.PtgInt(2), msbintest.PtgOp(5))),
+		msbintest.FormulaTokens(4, 0, xfGeneral, 3, msbintest.PtgExp(3, 0)),
+		msbintest.FormulaTokens(5, 0, xfGeneral, 3, msbintest.PtgExp(5, 0)),
+		msbintest.ArrayFormula(5, 5, 0, 0, m(msbintest.PtgArea(0, 1, 0, 0), msbintest.PtgArray(), msbintest.PtgOp(5)),
+			m([]byte{0}, msbintest.U16(0), []byte{2}, msbintest.Str("x"))...),
+		msbintest.DVList([][4]uint16{{0, 1, 0, 0}}, []string{"a", "b"}, nil, false),
+		msbintest.DVList([][4]uint16{{2, 2, 0, 0}}, nil, msbintest.PtgArea(0, 9, 5, 5), true),
+		msbintest.MsoDrawing(msbintest.ArtShape(1, 5, 1)), msbintest.Obj(6, 1), msbintest.TextObject("box"),
+		msbintest.MsoDrawing(msbintest.ArtShape(2, 5, 5, msbintest.ArtProp{ID: 0x0104, Value: 1}, msbintest.ArtProp{ID: 0x0381, Text: "alt"})), msbintest.Obj(8, 2),
+		msbintest.MsoDrawing(msbintest.ArtShape(3, 5, 9)), msbintest.Obj(5, 3), chart,
+	}
+	f.Add(msbintest.Workbook(append(append([][]byte(nil), styles...), links...), msbintest.Sheet{Name: "S", Records: rich},
+		msbintest.Sheet{Name: "C", Kind: 2, Records: [][]byte{chart[len(msbintest.BOF(0x20)) : len(chart)-4]}},
+		msbintest.Sheet{Name: "M", Kind: 1, Records: rich[2:5]}))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > 1<<20 {
 			return
@@ -104,7 +131,7 @@ func FuzzWorkbook(f *testing.F) {
 		timer := time.AfterFunc(5*time.Second, func() { panic("Extract took more than 5s") })
 		defer timer.Stop()
 		file := msbintest.BookFile(data)
-		doc, err := extract(file, &gofastcore.Options{Spans: true, Cells: true})
+		doc, err := extract(file, &gofastcore.Options{Spans: true, Cells: true, Images: gofastcore.ImagesData})
 		checkOutcome(t, doc, err)
 		// The same document whatever the number of sheets read at a
 		// time, also where a limit cuts it.

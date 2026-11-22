@@ -11,6 +11,7 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin/internal/clean"
 	"github.com/AOShei/go-fast-msbin/internal/numfmt"
+	"github.com/AOShei/go-fast-msbin/internal/officeart"
 	"github.com/AOShei/go-fast-msbin/internal/ptg"
 	"github.com/AOShei/go-fast-msbin/internal/stored"
 	"github.com/AOShei/go-fast-msbin/internal/symbol"
@@ -35,8 +36,14 @@ type Config struct {
 type sheetRef struct {
 	name   string
 	pos    int  // where its records begin in the stream
+	place  int  // its place among the BoundSheet records, which formulas name it by
 	hidden bool // hidden, or hidden so that only a program can show it
 	kind   byte // dtWorksheet and the like
+}
+
+// sheetPlace is where the records of a sheet are.
+type sheetPlace struct {
+	pos, size int
 }
 
 // The kinds of sheet a BoundSheet8 record names ([MS-XLS] 2.4.28).
@@ -74,6 +81,16 @@ type Book struct {
 	rich    map[uint32][]fontRun
 	fonts   []symbol.Font
 	removed int // control characters removed from shared strings
+
+	// places is where the records of each sheet begin, and how many bytes
+	// of them there are at most, in the order of the BoundSheet records.
+	places []sheetPlace
+
+	// codes are the number formats the workbook defines, by number.
+	codes map[int]string
+
+	// pictures is the store of pictures the shapes of the sheets show.
+	pictures []officeart.StoreEntry
 
 	// What formulas refer to outside themselves, and what the workbook
 	// stores and shows on no sheet (formulas.go).
@@ -119,6 +136,7 @@ func (b *Book) globals() {
 	codes := map[int]string{}
 	var scratch []byte
 	var links linkReader
+	var group []byte // the records of the drawing group
 	at := 0
 	typ, ok := c.record(at)
 	if !ok || typ != recBOF {
@@ -186,6 +204,10 @@ func (b *Book) globals() {
 			scratch = name
 			// A formula names a sheet by its place in this list, the
 			// modules of the VBA project among them.
+			ref.place = len(b.places)
+			if len(b.places) < warn.MaxSheets {
+				b.places = append(b.places, sheetPlace{pos: ref.pos})
+			}
 			if len(links.sheets) < warn.MaxSheets {
 				shown, _ := clean.String(name, clean.Prose)
 				links.sheets = append(links.sheets, clean.Label(shown))
@@ -205,6 +227,19 @@ func (b *Book) globals() {
 		case recSST:
 			b.fonts = fonts
 			b.strings(&c)
+		case recMsoDrawingGroup:
+			// The drawing group, which holds the pictures: it goes on in
+			// records of its own kind and in CONTINUE records.
+			if b.opts == nil || b.opts.Images != gofastcore.ImagesNone {
+				group = append(group, body...)
+				for c.next+4 <= len(b.data) {
+					if t := le.Uint16(b.data[c.next:]); t != recContinue && t != recMsoDrawingGroup {
+						break
+					}
+					c.record(c.next)
+					group = append(group, c.b...)
+				}
+			}
 		case recSupBook:
 			links.supBook(b, &c)
 		case recExternName:
@@ -221,6 +256,22 @@ func (b *Book) globals() {
 
 	formats := map[uint16]*numfmt.Format{}
 	b.styles = make([]cellStyle, len(xfs))
+	if len(group) > 0 {
+		var past int
+		b.pictures, past = officeart.Store(group, warn.MaxPictures)
+		b.docLost.Add(warn.CapPictures, int64(past))
+	}
+	b.codes = codes
+	// The records of a sheet end where those of the next begin.
+	for i := range b.places {
+		end := len(b.data)
+		for _, other := range b.places {
+			if other.pos > b.places[i].pos && other.pos < end {
+				end = other.pos
+			}
+		}
+		b.places[i].size = max(end-b.places[i].pos, 0)
+	}
 	links.finish(b)
 	b.fonts = fonts
 	for i, x := range xfs {

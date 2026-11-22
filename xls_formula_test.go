@@ -145,3 +145,38 @@ func TestMacroSheet(tt *testing.T) {
 		tt.Errorf("code: %q", b.Text)
 	}
 }
+
+// A drop-down list is a note at the first cell it is for: its values, or
+// the formula they come from.
+func TestDropDownLists(tt *testing.T) {
+	recs := [][]byte{
+		t.MulRK(0, 0, xfGeneral, 1, 2, 3), t.MulRK(1, 0, xfGeneral, 4, 5, 6), t.Row(5, true), t.Row(6, true),
+		t.DVList([][4]uint16{{1, 1, 1, 1}, {0, 0, 0, 0}}, []string{"yes", "no", "", `say "maybe"`}, nil, false),
+		t.DVList([][4]uint16{{0, 1, 2, 2}}, nil, t.PtgArea(0, 9, 5, 5), false),
+		t.DVList([][4]uint16{{3, 3, 0, 0}}, nil, t.PtgRefN(0, 4, true, true), true), // the arrow is hidden
+		t.DVList([][4]uint16{{5, 6, 0, 3}}, []string{"a", "b"}, nil, false),         // every cell in a hidden row
+		// A rule that is no list: whole numbers.
+		t.Rec(0x01BE, t.Cat(t.U32(1), t.U16(1), []byte{0, 0}, t.U16(1), []byte{0, 0}, t.U16(1), []byte{0, 0}, t.U16(1), []byte{0, 0},
+			t.U16(3, 0), t.PtgInt(1), t.U16(3, 0), t.PtgInt(9), t.U16(1, 0, 0, 0, 0))...),
+	}
+	doc := mustExtract(tt, book(nil, t.Sheet{Name: "S", Records: recs}), nil)
+	type list struct {
+		text, at string
+		hidden   bool
+	}
+	var got []list
+	for _, b := range doc.Parts[0].Blocks {
+		if b.Kind == gofastcore.KindNote && b.Attrs[gofastcore.AttrNoteType] == gofastcore.NoteChoices {
+			got = append(got, list{b.Text, b.Loc.Range, b.Display == gofastcore.DisplayHidden})
+		}
+	}
+	want := []list{
+		{"yes\nno\nsay \"maybe\"", "B2 A1", false},
+		{"=$F$1:$F$10", "C1:C2", false},
+		{"=E4", "A4", true},
+		{"a\nb", "A6:D7", true},
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		tt.Errorf("lists:\n%+v\nwant\n%+v", got, want)
+	}
+}

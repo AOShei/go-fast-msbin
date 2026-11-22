@@ -287,12 +287,12 @@ func TestSheetsAndWhatTheyDeclare(tt *testing.T) {
 	if b := doc.Parts[1].Blocks[0]; b.Display != gofastcore.DisplayHidden {
 		tt.Errorf("the blocks of a hidden sheet: %v", b.Display)
 	}
-	// What is not read is said: a chart sheet, a dialog sheet. A macro
-	// sheet's cells are read, and it is active content.
+	// What is not read is said: a dialog sheet. A macro sheet's cells are
+	// read, and it is active content.
 	if len(doc.Parts[3].Blocks) != 0 || len(doc.Parts[5].Blocks) != 0 || len(doc.Parts[4].Blocks) != 1 {
 		tt.Errorf("chart %d, macros %d, dialog %d blocks", len(doc.Parts[3].Blocks), len(doc.Parts[4].Blocks), len(doc.Parts[5].Blocks))
 	}
-	if w, ok := warning(doc.Warnings, gofastmsbin.WarnUnreadContent); !ok || w.Message != "1 chart sheet, 1 dialog sheet" {
+	if w, ok := warning(doc.Warnings, gofastmsbin.WarnUnreadContent); !ok || w.Message != "1 dialog sheet" {
 		tt.Errorf("%+v", doc.Warnings)
 	}
 	if w, ok := warning(doc.Warnings, gofastcore.WarnInputActiveContent); !ok || !strings.Contains(w.Message, "macro sheets") {

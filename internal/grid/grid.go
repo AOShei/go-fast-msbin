@@ -597,9 +597,11 @@ func (sh *Sheet) Order() {
 // refName writes a cell's place as a reference: column letters and row
 // number.
 func RefName(dst []byte, row, col int32) []byte {
-	var letters [3]byte
+	// A column of a file of this format is in sixteen bits at most, which
+	// four letters name.
+	var letters [8]byte
 	n := 0
-	for c := col + 1; c > 0; c = (c - 1) / 26 {
+	for c := col + 1; c > 0 && n < len(letters); c = (c - 1) / 26 {
 		letters[n] = byte('A' + (c-1)%26)
 		n++
 	}

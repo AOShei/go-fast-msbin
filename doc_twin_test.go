@@ -46,12 +46,24 @@ func blockKey(b *gofastcore.Block) string {
 // same blocks, read by this library and by go-fast-ooxml. Held-out files
 // are counted and never named.
 func TestDocTwins(t *testing.T) {
+	twinBlocks(t, "doc", "docx", gofastcore.PartBody)
+}
+
+// A presentation and the .pptx file LibreOffice makes of it give the same
+// slides with the same blocks, read by this library and by go-fast-ooxml.
+func TestPptTwins(t *testing.T) {
+	twinBlocks(t, "ppt", "pptx", gofastcore.PartSlide)
+}
+
+// twinBlocks compares the blocks of the parts of one kind of every file of
+// a format with those of its twin.
+func twinBlocks(t *testing.T, format, ext string, kind gofastcore.PartKind) {
 	if testing.Short() {
 		t.Skip("a comparison over the whole corpus")
 	}
-	dir := filepath.Join("testdata", "corpus", "twins-doc")
+	dir := filepath.Join("testdata", "corpus", "twins-"+format)
 	if _, err := os.Stat(dir); err != nil {
-		t.Skip("no twins: run testdata/oracle_lo.py --twin --format doc")
+		t.Skip("no twins: run testdata/oracle_lo.py --twin --format " + format)
 	}
 	bin := ooxmlCommand(t)
 	entries, err := msbintest.Corpus("testdata")
@@ -71,8 +83,8 @@ func TestDocTwins(t *testing.T) {
 	}
 	only := os.Getenv("GOFAST_MSBIN_ONLY")
 	for _, e := range entries {
-		twin := filepath.Join(dir, e.SHA256+".docx")
-		if _, err := os.Stat(twin); e.Format != "doc" || err != nil {
+		twin := filepath.Join(dir, e.SHA256+"."+ext)
+		if _, err := os.Stat(twin); e.Format != format || err != nil {
 			continue
 		}
 		if only != "" && !strings.Contains(e.Path, only) {
@@ -80,7 +92,7 @@ func TestDocTwins(t *testing.T) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		doc, err := gofastmsbin.ExtractFile(ctx, e.Path, nil)
-		if err != nil || doc.Source.Format != "doc" {
+		if err != nil || doc.Source.Format != format {
 			cancel()
 			continue
 		}
@@ -98,7 +110,7 @@ func TestDocTwins(t *testing.T) {
 		count := func(d *gofastcore.Document) (blocks map[string]int, words map[string]int) {
 			blocks, words = map[string]int{}, map[string]int{}
 			for i := range d.Parts {
-				if d.Parts[i].Kind != gofastcore.PartBody {
+				if d.Parts[i].Kind != kind {
 					continue
 				}
 				for k := range d.Parts[i].Blocks {
@@ -108,6 +120,13 @@ func TestDocTwins(t *testing.T) {
 					}
 					key := blockKey(b)
 					blocks[key]++
+					// What a master repeats on every slide is counted by
+					// block and left out of the words: LibreOffice writes
+					// the fields of a master's footer as "<footer>" and
+					// "<number>", and today's date where the file has none.
+					if kind == gofastcore.PartSlide && (b.Kind == gofastcore.KindHeader || b.Kind == gofastcore.KindFooter) {
+						continue
+					}
 					for _, w := range strings.Fields(key[strings.IndexByte(key, ' ')+1:]) {
 						words[w]++
 					}
@@ -171,6 +190,15 @@ func TestDocTwins(t *testing.T) {
 	recall := float64(textSame) / float64(max(textSame+textThere, 1))
 	t.Logf("%d documents: %d blocks the same, %d only here, %d only in the twin; words: precision %.4f, recall %.4f",
 		files, same, onlyHere, onlyThere, precision, recall)
+	if kind == gofastcore.PartSlide {
+		var own [3]int
+		for k, v := range kinds {
+			if k != "header" && k != "footer" {
+				own[0], own[1], own[2] = own[0]+v[0], own[1]+v[1], own[2]+v[2]
+			}
+		}
+		t.Logf("without headers and footers: %d blocks the same, %d only here, %d only in the twin", own[0], own[1], own[2])
+	}
 }
 
 // wordsOf counts the words of a text: runs of letters and digits.

@@ -175,6 +175,7 @@ type Result struct {
 	// can account for: a sound stream keeps each value once, so its text
 	// is no longer than the stream, decoded.
 	given, room int
+	inVector    bool // the value being read is an element of a vector
 }
 
 // Read reads the property sets of a stream. It never fails: a stream
@@ -504,7 +505,12 @@ func (res *Result) scalar(set *Set, typ uint16, b []byte, depth int) (v Value, s
 		}
 		raw := b[4 : 4+n]
 		size := 4 + int(n)
-		size += (4 - size%4) % 4
+		// A string of a vector is not padded to four bytes, as Office
+		// writes it ([MS-OSHARED] 2.3.3.1.9); one that is a property's
+		// own value is.
+		if !res.inVector {
+			size += (4 - size%4) % 4
+		}
 		return Value{Type: String, Text: res.text(set.CodePage, raw)}, size, true
 	case vtLPWSTR:
 		// A count of 16-bit units.
@@ -544,6 +550,9 @@ func (res *Result) vector(set *Set, typ uint16, b []byte, depth int) (v Value, s
 	at := 4
 	var text []byte
 	any := false
+	was := res.inVector
+	res.inVector = true
+	defer func() { res.inVector = was }()
 	for i := uint32(0); i < count; i++ {
 		if i == maxVector {
 			res.ValuesCut++

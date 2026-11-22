@@ -58,6 +58,9 @@ const (
 	CapFieldCode
 	CapFieldDepth
 	CapTableCells
+	// PowerPoint.
+	CapSlides
+	CapSlideShapes
 	numCaps
 )
 
@@ -108,6 +111,8 @@ var caps = [numCaps]capInfo{
 	CapFieldCode:      {"field codes longer than " + itoa(MaxFieldCode) + " bytes were cut there", "field", "fields"},
 	CapFieldDepth:     {"fields nested more than " + itoa(MaxFieldDepth) + " deep were read as text of the field around them; their codes were not kept", "field", "fields"},
 	CapTableCells:     {"tables of more than " + itoa(MaxTableCells) + " cells were cut there", "table", "tables"},
+	CapSlides:         {"slides past " + itoa(MaxSlides) + " were not read", "slide", "slides"},
+	CapSlideShapes:    {"shapes of a slide past " + itoa(MaxSlideShapes) + " were not read", "shape", "shapes"},
 	CapSharedFormulas: {"shared formulas of a sheet past " + itoa(MaxSharedFormulas) + " were not kept; cells that use them give no formula", "formula", "formulas"},
 }
 
@@ -145,6 +150,8 @@ const (
 	MaxChartTitle     = 4096
 	MaxChartTotal     = 1 << 21
 	MaxCharts         = 1 << 12
+	MaxSlides         = 1 << 16
+	MaxSlideShapes    = 1 << 14
 	MaxFieldCode      = 1 << 16
 	MaxFieldDepth     = 64
 	MaxTableCells     = 1 << 22

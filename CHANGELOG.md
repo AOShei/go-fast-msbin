@@ -27,3 +27,13 @@ and what each found.
   footers, bookmarks), hidden text and spans, tracked deletions, text boxes,
   pictures, document variables; and the text, headings, tables and footnotes
   of Word 6/95 documents.
+- Phase 6: PowerPoint presentations. Slides as parts with their size and the
+  place of every block; titles, bulleted and numbered text by the master's
+  styles, text boxes, tables, pictures, notes, comments, links; what the
+  master puts on every slide, with the date, the footer and the slide's
+  number; Microsoft Graph charts from their datasheets; hidden slides and
+  shapes; embedded objects and the VBA project of a presentation. A file
+  whose Current User stream is unusable, and one saved for PowerPoint 95 and
+  97 both, are read. The strings of a vector of properties are read as
+  Office writes them (not padded), which had made the properties of many
+  files look damaged.

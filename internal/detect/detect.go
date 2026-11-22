@@ -65,6 +65,9 @@ const (
 	bookStream     = "Book" // Excel 5 and 95
 	pptStream      = "PowerPoint Document"
 	currentUser    = "Current User"
+	// DualStorage is the storage that holds the PowerPoint 97
+	// presentation of a file saved for PowerPoint 95 and 97 both.
+	DualStorage = "PP97_DUALSTORAGE"
 )
 
 // Compound says what the open compound file is.
@@ -92,8 +95,8 @@ func Compound(f *cfb.File) Info {
 	return Info{Other: "a compound file with no Word, Excel or PowerPoint document in it"}
 }
 
-func head(f *cfb.File, name string, n int) []byte {
-	s, err := f.Open(name)
+func head(f *cfb.File, name string, n int, in ...string) []byte {
+	s, err := f.Open(append(in, name)...)
 	if err != nil {
 		return nil
 	}
@@ -213,7 +216,18 @@ func powerpoint(f *cfb.File) Info {
 	if f.Has("PP40") {
 		return Info{Format: Ppt, Version: "PowerPoint 95 or older"}
 	}
-	b := head(f, currentUser, 32)
+	// A presentation saved for PowerPoint 95 and 97 both: the one of
+	// PowerPoint 97 is in a storage of its own, and is the one read. A
+	// file with the streams of PowerPoint 95 and no such storage is of
+	// PowerPoint 95.
+	var dual []string
+	switch {
+	case f.Has(DualStorage, pptStream):
+		dual = []string{DualStorage}
+	case f.Has("Text_Content") && f.Has("PersistentStorage Directory"):
+		return Info{Format: Ppt, Version: "PowerPoint 95 or older"}
+	}
+	b := head(f, currentUser, 32, dual...)
 	if len(b) < 24 {
 		return in
 	}

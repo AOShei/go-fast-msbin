@@ -72,11 +72,13 @@ func propValue(v any) []byte {
 		}
 		return typed(0x1F, pad4(b))
 	case Strings:
+		// The strings of a vector are not padded, as Office writes them.
 		b := le.AppendUint32(nil, uint32(len(v)))
 		for _, s := range v {
-			b = append(b, lpstr(s)...)
+			b = le.AppendUint32(b, uint32(len(s)+1))
+			b = append(append(b, s...), 0)
 		}
-		return typed(0x101E, b)
+		return typed(0x101E, pad4(b))
 	case int32:
 		return typed(0x03, le.AppendUint32(nil, uint32(v)))
 	case int:

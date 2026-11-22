@@ -188,3 +188,32 @@ func FuzzWord(f *testing.F) {
 		checkOutcome(t, plain, err2)
 	})
 }
+
+// FuzzPresentation feeds arbitrary bytes to the PowerPoint reader as the
+// objects of a presentation (its document, its master, a slide and the
+// slide's notes page) and its stream of pictures, so that the fuzzer
+// works on the records and not on the chain of edits that leads to them.
+func FuzzPresentation(f *testing.F) {
+	objects := richDeck().all()
+	_, pictures := msbintest.PPTPictures(msbintest.PNG(4, 3))
+	f.Add(objects[1], objects[2], objects[10], objects[11], pictures)
+	plain := pptDeck{slides: []pptSlide{{layout: 1, shapes: [][]byte{
+		msbintest.PPTShape{Top: 100, Left: 100, Right: 900, Bottom: 300, Text: msbintest.PPTText(4, "plain")}.Bytes()}}}}.all()
+	f.Add(plain[1], plain[2], plain[10], []byte{}, []byte{})
+	f.Fuzz(func(t *testing.T, doc, master, slide, notes, pictures []byte) {
+		if len(doc)+len(master)+len(slide)+len(notes)+len(pictures) > 1<<20 {
+			return
+		}
+		timer := time.AfterFunc(5*time.Second, func() { panic("Extract took more than 5s") })
+		defer timer.Stop()
+		var file msbintest.PPTFile
+		file.Edit(1, map[uint32][]byte{1: doc, 2: master, 10: slide, 11: notes})
+		streams := file.Streams()
+		streams["Pictures"] = pictures
+		data := msbintest.Compound(streams)
+		out, err := extract(data, &gofastcore.Options{Spans: true, Images: gofastcore.ImagesData})
+		checkOutcome(t, out, err)
+		small, err2 := extract(data, &gofastcore.Options{Limits: gofastcore.Limits{MaxTextBytes: 200}})
+		checkOutcome(t, small, err2)
+	})
+}

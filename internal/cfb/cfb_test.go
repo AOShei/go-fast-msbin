@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -352,4 +353,54 @@ func FuzzCFB(f *testing.F) {
 		}
 		outcome(t, "fuzz input", data)
 	})
+}
+
+// A file with a wrong byte order mark, or whose directory's chain of
+// sectors loops or leads off the file, is read as far as it is sound,
+// and says what was wrong.
+func TestReadsOnPastDamage(t *testing.T) {
+	streams := map[string][]byte{"Big": bytes.Repeat([]byte("abcdefgh"), 1000), "Small": []byte("short")}
+	good := msbintest.Compound(streams)
+	le := binary.LittleEndian
+	check := func(name string, data []byte, wantNote string) {
+		t.Helper()
+		f, err := cfb.Open(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			return
+		}
+		if !strings.Contains(f.Damaged, wantNote) {
+			t.Errorf("%s: damaged says %q", name, f.Damaged)
+		}
+		s, err := f.Open("Big")
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			return
+		}
+		got := make([]byte, s.Size())
+		if _, err := s.ReadAt(got, 0); (err != nil && err != io.EOF) || !bytes.Equal(got, streams["Big"]) {
+			t.Errorf("%s: the stream is not read: %v", name, err)
+		}
+	}
+	mark := append([]byte(nil), good...)
+	mark[28], mark[29] = 0x20, 0xFF
+	check("byte order mark", mark, "byte order mark 0xff20")
+
+	// The directory's first sector is made to follow itself, and to lead
+	// off the file.
+	dir, fat := le.Uint32(good[48:]), le.Uint32(good[76:])
+	at := (int64(fat)+1)*512 + 4*int64(dir)
+	loop := append([]byte(nil), good...)
+	le.PutUint32(loop[at:], dir)
+	check("loop", loop, "directory")
+	off := append([]byte(nil), good...)
+	le.PutUint32(off[at:], 0x00FFFFFF)
+	check("off the file", off, "directory")
+
+	// A directory whose first sector is off the file has nothing sound.
+	none := append([]byte(nil), good...)
+	le.PutUint32(none[48:], 0x00FFFFFF)
+	if _, err := cfb.Open(bytes.NewReader(none), int64(len(none))); !errors.Is(err, cfb.ErrDamaged) {
+		t.Errorf("no directory: %v", err)
+	}
 }

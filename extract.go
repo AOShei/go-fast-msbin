@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin/internal/cfb"
 	"github.com/AOShei/go-fast-msbin/internal/clean"
 	"github.com/AOShei/go-fast-msbin/internal/detect"
+	"github.com/AOShei/go-fast-msbin/internal/warn"
 )
 
 // Defaults for the limits of gofastcore.Options.Limits, used where a limit
@@ -19,6 +19,39 @@ import (
 const (
 	// DefaultMaxInputBytes bounds the size of the file.
 	DefaultMaxInputBytes = 1 << 30
+	// DefaultMaxDecodedBytes bounds the bytes the file is expanded to
+	// beyond its own size, over the document and the files embedded in
+	// it: macro code and pictures the file keeps compressed, and embedded
+	// files written out to be read.
+	DefaultMaxDecodedBytes = 2 << 30
+)
+
+// Warning codes specific to this library. Each states a fact about the
+// file. The codes shared by all go-fast libraries are in gofastcore, and
+// this library raises these of them besides the ones about parts, limits
+// and embedded documents:
+//
+//	input.active_content      the file contains a VBA project
+//	input.external_reference  an embedded object is a link to a file
+//	                          outside the document
+//	input.repaired            the compound file is damaged, and was read
+//	                          as far as it could be
+//	text.unmapped_glyphs      text in a code page that does not define
+//	                          some of its characters
+const (
+	// WarnPropertiesDamaged: a stream of document properties could not be
+	// read to its end; the properties read before the damage are kept.
+	WarnPropertiesDamaged = warn.PropertiesDamaged
+	// WarnControlCharsRemoved: control characters with no meaning as text
+	// were removed from extracted strings.
+	WarnControlCharsRemoved = warn.ControlCharsRemoved
+	// WarnUnreadContent: the document holds content of a kind this version
+	// does not read.
+	WarnUnreadContent = warn.UnreadContent
+	// WarnPartDamaged: a stream of the file other than its main one (a
+	// VBA project, an embedded object) could not be read to its end; what
+	// was read is used.
+	WarnPartDamaged = warn.PartDamaged
 )
 
 // Extractor extracts Word, Excel and PowerPoint files in the binary
@@ -47,61 +80,54 @@ func ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*g
 // ExtractFile opens the named file and extracts it. The file's base name
 // is recorded as the source name unless opts.Name is set.
 func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*gofastcore.Document, error) {
-	f, err := os.Open(path)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	f, err := e.openFile(ctx, path, opts)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	o := gofastcore.Options{}
-	if opts != nil {
-		o = *opts
-	}
-	if o.Name == "" {
-		o.Name = info.Name()
-	}
-	return e.Extract(ctx, f, info.Size(), &o)
+	return f.Document(ctx)
 }
 
 // Extract reads size bytes from r and returns the document.
 //
-// The library is in development and reads no format yet: the error wraps
-// gofastcore.ErrUnsupported and says what the file is. The other errors
-// are already the final ones:
+// The format is decided from the file itself, never from a name. The
+// library is in development: the properties, the macros and the embedded
+// files of a document are read, and its text is not yet (its part says
+// so, with part.failed).
+//
+// An error wraps one of the gofastcore errors:
 //
 //   - ErrLimitExceeded: the input is larger than Limits.MaxInputBytes, or
 //     its compound file has more entries than are read.
 //   - ErrMalformed: a compound file too damaged to say what it holds.
-//   - ErrUnsupported: a file that is none of the three formats, or one of
-//     a generation that is not read (Excel 2 to 4, Word 2, PowerPoint 95
-//     and older).
+//   - ErrUnsupported: a file that is none of the three formats; one of a
+//     generation that is not read (Excel 2 to 4, Word 2, PowerPoint 95
+//     and older); an encrypted file, which is not read yet.
+//   - ErrNoPartsSelected: Options.Parts selects none of the document's
+//     parts.
+//
+// It is OpenReaderAt followed by Document.
 func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Options) (*gofastcore.Document, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	var limits gofastcore.Limits
-	if opts != nil {
-		limits = opts.Limits
-	}
-	if limit := gofastcore.ResolveLimit(limits.MaxInputBytes, DefaultMaxInputBytes); size > limit {
-		return nil, fmt.Errorf("gofastmsbin: input of %d bytes is over the limit of %d: %w", size, limit, gofastcore.ErrLimitExceeded)
-	}
-	info, err := identify(r, size)
+	f, err := e.open(ctx, r, size, opts)
 	if err != nil {
 		return nil, err
 	}
-	return nil, refusal(info)
+	return f.Document(ctx)
 }
 
-// identify says what the file is, or returns the error for a file that
-// cannot be told: one of the shared errors, wrapped.
-func identify(r io.ReaderAt, size int64) (detect.Info, error) {
+// identify opens the compound file and says what it is. For a file that
+// is not a compound file it returns no file, and what the file is
+// instead. The error is one of the shared errors, wrapped.
+func identify(r io.ReaderAt, size int64) (*cfb.File, detect.Info, error) {
 	start := make([]byte, min(size, 512))
 	if n, err := r.ReadAt(start, 0); err != nil && err != io.EOF {
-		return detect.Info{}, fmt.Errorf("gofastmsbin: reading the input: %w", err)
+		return nil, detect.Info{}, fmt.Errorf("gofastmsbin: reading the input: %w", err)
 	} else {
 		start = start[:n]
 	}
@@ -109,27 +135,23 @@ func identify(r io.ReaderAt, size int64) (detect.Info, error) {
 	switch {
 	case errors.Is(err, cfb.ErrNotCompound):
 		if bytes.HasPrefix(start, []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}) {
-			return detect.Info{}, fmt.Errorf("gofastmsbin: a compound file cut off inside its header (%d bytes): %w", size, gofastcore.ErrMalformed)
+			return nil, detect.Info{}, fmt.Errorf("gofastmsbin: a compound file cut off inside its header (%d bytes): %w", size, gofastcore.ErrMalformed)
 		}
-		return detect.Bare(start), nil
+		return nil, detect.Bare(start), nil
 	case errors.Is(err, cfb.ErrLimit):
-		return detect.Info{}, fmt.Errorf("gofastmsbin: %s: %w", clean.Label(err.Error()), gofastcore.ErrLimitExceeded)
+		return nil, detect.Info{}, fmt.Errorf("gofastmsbin: %s: %w", clean.Label(err.Error()), gofastcore.ErrLimitExceeded)
 	case err != nil:
-		return detect.Info{}, fmt.Errorf("gofastmsbin: a compound file that cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
+		return nil, detect.Info{}, fmt.Errorf("gofastmsbin: a compound file that cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
 	}
-	return detect.Compound(f), nil
+	return f, detect.Compound(f), nil
 }
 
 // refusal is the error for a file that is not read, saying what it is.
 func refusal(in detect.Info) error {
 	what := "the file is not a compound file, and so none of the binary Office formats (.doc, .xls, .ppt)"
 	switch {
-	case in.Format != "" && in.Read:
-		what = in.Version + " file"
-		if in.Encryption != "" {
-			what += ", encrypted (" + in.Encryption + ")"
-		}
-		what += ": this format is not read yet"
+	case in.Format != "" && in.Read && in.Encryption != "":
+		what = in.Version + " file, encrypted (" + in.Encryption + "): encrypted files are not read yet"
 	case in.Format != "" && in.Version != "":
 		what = in.Version + " file: this generation of the format is not read"
 	case in.Format != "":

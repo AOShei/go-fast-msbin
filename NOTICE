@@ -10,7 +10,9 @@ All of it is by the same author and under the same MIT License.
   internal/cfb (the reader)   from go-fast-email (github.com/AOShei/go-fast-email,
                               internal/cfb, v0.1.3), which copied it from
                               go-fast-ooxml. The class identifier of a storage,
-                              Write and Export are added here.
+                              Write and Export are added here, and reading on
+                              past a wrong byte-order mark and a broken
+                              directory chain.
   internal/codepage           from go-fast-rtf (github.com/AOShei/go-fast-rtf,
                               internal/codepage, v0.1.2), unchanged.
   internal/numfmt,            from go-fast-ooxml (github.com/AOShei/go-fast-ooxml,
@@ -18,8 +20,15 @@ All of it is by the same author and under the same MIT License.
   internal/label,             LibreOffice displays for 6,048 pairs of a number
   internal/clean,             format and a value (testdata/numfmt).
   testdata/numfmt
-  internal/msbintest          the writer of compound files in compound.go, from
-                              go-fast-ooxml's internal/ooxmltest.
+  internal/vba,               from go-fast-ooxml (v0.1.1), adapted: the VBA
+  internal/warn,              reader takes a storage of the file; the bounds
+  internal/stored,            and warning codes are this library's; the stored
+  internal/unit,              part holds macros only; file.go keeps ooxml's
+  file.go, cmd/gofastmsbin    reading of parts in order and in parallel.
+  internal/codepage/decode.go added here: decoding a whole string.
+  internal/msbintest          the writers of compound files (compound.go) and
+                              of VBA projects (vba.go), from go-fast-ooxml's
+                              internal/ooxmltest.
 
 Third-party data
 ================

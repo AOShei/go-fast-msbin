@@ -85,8 +85,11 @@ type File struct {
 	mini       *Stream // the stream that holds the short streams
 	indexOnce  sync.Once
 	index      map[int]map[string]int // the children of each storage, by lowercase name
-	// Damaged is set, to what was wrong, when the short streams could not
-	// be read: the file is read without them.
+	// Damaged is set, to what was wrong, when the file was read in spite
+	// of damage: the short streams could not be read, and the file is
+	// read without them; the directory's chain of sectors breaks, and
+	// the entries before the break are read; the byte order mark is
+	// wrong.
 	Damaged string
 }
 
@@ -109,12 +112,16 @@ func Open(r io.ReaderAt, size int64) (*File, error) {
 	major := le.Uint16(head[26:])
 	f.shift, f.miniShift = uint(le.Uint16(head[30:])), uint(le.Uint16(head[32:]))
 	switch {
-	case le.Uint16(head[28:]) != 0xFFFE:
-		return nil, fmt.Errorf("%w: byte order mark %#x", ErrDamaged, le.Uint16(head[28:]))
 	case !(major == 3 && f.shift == 9 || major == 4 && f.shift == 12):
 		return nil, fmt.Errorf("%w: version %d with sectors of 2^%d bytes", ErrDamaged, major, f.shift)
 	case f.miniShift != 6:
 		return nil, fmt.Errorf("%w: short sectors of 2^%d bytes", ErrDamaged, f.miniShift)
+	}
+	// The byte order mark has one value a file can have; every other field
+	// is read the same whatever it says, so a wrong one is noted and the
+	// file read.
+	if mark := le.Uint16(head[28:]); mark != 0xFFFE {
+		f.note(fmt.Sprintf("byte order mark %#x", mark))
 	}
 	sectorSize := int64(1) << f.shift
 	// The first sector follows the header, which fills a sector's space.
@@ -171,9 +178,16 @@ func Open(r io.ReaderAt, size int64) (*File, error) {
 	}
 
 	// The directory.
+	// A chain that leads off the file or back into itself is read as far
+	// as it is sound: the entries in the sectors before the break are the
+	// file's, and those after it are lost.
 	dir, err := f.chain(firstDir, -1)
 	if err != nil {
-		return nil, fmt.Errorf("%w (directory)", err)
+		dir = f.sound(firstDir)
+		if len(dir) == 0 {
+			return nil, fmt.Errorf("%w (directory)", err)
+		}
+		f.note(fmt.Sprintf("%v (directory, read as far as its first %d sectors)", err, len(dir)))
 	}
 	for _, n := range dir {
 		if err := f.sector(n, buf); err != nil {
@@ -215,12 +229,14 @@ func Open(r io.ReaderAt, size int64) (*File, error) {
 	if root.size > 0 && root.start <= maxRegular {
 		f.mini, err = f.stream(root.start, root.size, false)
 		if err != nil {
-			f.mini, f.Damaged = nil, fmt.Sprintf("%v (short-stream container)", err)
+			f.mini = nil
+			f.note(fmt.Sprintf("%v (short-stream container)", err))
 			return f, nil
 		}
 		table, err := f.chain(firstMiniFAT, int64(miniFATSectors)*sectorSize)
 		if err != nil {
-			f.mini, f.Damaged = nil, fmt.Sprintf("%v (short-stream table)", err)
+			f.mini = nil
+			f.note(fmt.Sprintf("%v (short-stream table)", err))
 			return f, nil
 		}
 		f.miniFAT = make([]uint32, 0, len(table)*int(perSector))
@@ -234,6 +250,29 @@ func Open(r io.ReaderAt, size int64) (*File, error) {
 		}
 	}
 	return f, nil
+}
+
+// note adds to what Damaged says.
+func (f *File) note(what string) {
+	if f.Damaged != "" {
+		f.Damaged += "; "
+	}
+	f.Damaged += what
+}
+
+// sound returns the sectors of the chain that starts at first up to
+// where it leads off the file or to a sector it has been through.
+func (f *File) sound(first uint32) []uint32 {
+	var out []uint32
+	seen := map[uint32]bool{}
+	for n := first; n != endOfChain; n = f.fat[n] {
+		if n >= f.sectors || int64(n) >= int64(len(f.fat)) || seen[n] {
+			break
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out
 }
 
 // sector reads the sector with the given number into buf.

@@ -52,8 +52,8 @@ func currentUser(token uint32, version uint16) []byte {
 	return b
 }
 
-// Until the readers are written, every file is refused, and the refusal
-// says what the file is.
+// A file is told apart by its content: one of a generation that is read
+// gives a document, and any other a refusal that says what the file is.
 func TestFilesAreToldApart(t *testing.T) {
 	bof8 := record(0x0809, u16s(0x0600, 0x0005, 0, 0, 0, 0, 0, 0)...)
 	bof5 := record(0x0809, u16s(0x0500, 0x0005, 0, 0)...)
@@ -62,18 +62,18 @@ func TestFilesAreToldApart(t *testing.T) {
 		want string
 		err  error
 	}{
-		"word 97":            {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0200), "1Table": {}}), "Word 97-2003 file: this format is not read yet", gofastcore.ErrUnsupported},
+		"word 97":            {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0200), "1Table": {}}), "doc: Word 97-2003", nil},
 		"word 97, xor":       {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x8100)}), "Word 97-2003 file, encrypted (XOR obfuscation)", gofastcore.ErrUnsupported},
 		"word 97, rc4":       {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0300), "1Table": u16s(1, 1)}), "encrypted (RC4)", gofastcore.ErrUnsupported},
 		"word 97, cryptoapi": {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0100), "0Table": u16s(3, 2)}), "encrypted (RC4 CryptoAPI)", gofastcore.ErrUnsupported},
-		"word 95":            {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5DC, 104, 0)}), "Word 6/95 file: this format is not read yet", gofastcore.ErrUnsupported},
-		"excel 97":           {msbintest.Compound(map[string][]byte{"Workbook": bof8}), "Excel 97-2003 (BIFF8) file: this format is not read yet", gofastcore.ErrUnsupported},
-		"excel 95":           {msbintest.Compound(map[string][]byte{"Book": bof5}), "Excel 5/95 (BIFF5) file", gofastcore.ErrUnsupported},
-		"excel both":         {msbintest.Compound(map[string][]byte{"Book": bof5, "Workbook": bof8}), "Excel 97-2003 (BIFF8)", gofastcore.ErrUnsupported},
+		"word 95":            {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5DC, 104, 0)}), "doc: Word 6/95", nil},
+		"excel 97":           {msbintest.Compound(map[string][]byte{"Workbook": bof8}), "xls: Excel 97-2003 (BIFF8)", nil},
+		"excel 95":           {msbintest.Compound(map[string][]byte{"Book": bof5}), "xls: Excel 5/95 (BIFF5)", nil},
+		"excel both":         {msbintest.Compound(map[string][]byte{"Book": bof5, "Workbook": bof8}), "xls: Excel 97-2003 (BIFF8)", nil},
 		"excel 97, xor":      {msbintest.Compound(map[string][]byte{"Workbook": append(bof8, record(0x002F, u16s(0, 1, 2)...)...)}), "encrypted (XOR obfuscation)", gofastcore.ErrUnsupported},
 		"excel 97, rc4":      {msbintest.Compound(map[string][]byte{"Workbook": append(bof8, record(0x002F, u16s(1, 1, 1)...)...)}), "encrypted (RC4)", gofastcore.ErrUnsupported},
 		"excel 97, capi":     {msbintest.Compound(map[string][]byte{"Workbook": append(bof8, record(0x002F, u16s(1, 4, 2)...)...)}), "encrypted (RC4 CryptoAPI)", gofastcore.ErrUnsupported},
-		"powerpoint 97":      {msbintest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Current User": currentUser(0xE391C05F, 0x03F4)}), "PowerPoint 97-2003 file: this format is not read yet", gofastcore.ErrUnsupported},
+		"powerpoint 97":      {msbintest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Current User": currentUser(0xE391C05F, 0x03F4)}), "ppt: PowerPoint 97-2003", nil},
 		"powerpoint, capi":   {msbintest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Current User": currentUser(0xF3D1C4DF, 0x03F4)}), "encrypted (RC4 CryptoAPI)", gofastcore.ErrUnsupported},
 		"powerpoint 95":      {msbintest.Compound(map[string][]byte{"PowerPoint Document": {1}, "PP40": {1}}), "PowerPoint 95 or older file: this generation of the format is not read", gofastcore.ErrUnsupported},
 		"encrypted package":  {msbintest.Compound(map[string][]byte{"EncryptedPackage": {1}, "EncryptionInfo": {1}}), "an encrypted Office Open XML package", gofastcore.ErrUnsupported},
@@ -89,6 +89,27 @@ func TestFilesAreToldApart(t *testing.T) {
 		"no directory":       {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0)})[:512], "cannot be read", gofastcore.ErrMalformed},
 	} {
 		doc, err := extract(c.data, nil)
+		if c.err == nil {
+			// A file of a generation that is read gives a document, whose
+			// part says which generation it is.
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
+				continue
+			}
+			if err := doc.Validate(); err != nil {
+				t.Errorf("%s: %v", name, err)
+			}
+			got := doc.Source.Format + ": "
+			for _, w := range doc.Parts[0].Warnings {
+				if w.Code == gofastcore.WarnPartFailed {
+					got += w.Message
+				}
+			}
+			if !strings.HasPrefix(got, c.want) && !strings.Contains(got, strings.Replace(c.want, ": ", ": the content of a ", 1)) {
+				t.Errorf("%s: %s, want %q", name, got, c.want)
+			}
+			continue
+		}
 		if doc != nil || !errors.Is(err, c.err) || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v (document: %v), want %q", name, err, doc != nil, c.want)
 		}
@@ -101,7 +122,7 @@ func TestInputOverTheLimit(t *testing.T) {
 	if !errors.Is(err, gofastcore.ErrLimitExceeded) {
 		t.Errorf("%v", err)
 	}
-	if _, err := extract(data, &gofastcore.Options{Limits: gofastcore.Limits{MaxInputBytes: -1}}); !errors.Is(err, gofastcore.ErrUnsupported) {
+	if _, err := extract(data, &gofastcore.Options{Limits: gofastcore.Limits{MaxInputBytes: -1}}); !errors.Is(err, gofastcore.ErrUnsupported) && err != nil {
 		t.Errorf("no limit: %v", err)
 	}
 }

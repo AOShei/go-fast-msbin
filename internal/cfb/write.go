@@ -2,6 +2,7 @@ package cfb
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -303,6 +304,10 @@ func (f *File) IsStorage(path ...string) bool {
 	return ok && f.entries[i].kind == kindStorage
 }
 
+// ErrDeep is wrapped, beside ErrLimit, by the error of Export for a
+// storage whose storages nest too deep.
+var ErrDeep = errors.New("storages nested more than 64 deep")
+
 // maxExportDepth bounds how deeply the storages of an exported storage
 // nest. Office writes two or three levels.
 const maxExportDepth = 64
@@ -325,7 +330,7 @@ func (f *File) Export(limit int64, path ...string) ([]byte, int64, error) {
 		e := &f.entries[at]
 		n := &Node{Name: e.name, Storage: true, CLSID: e.clsid}
 		if depth > maxExportDepth {
-			return nil, fmt.Errorf("%w: storages nested more than %d deep", ErrLimit, maxExportDepth)
+			return nil, fmt.Errorf("%w: %w", ErrLimit, ErrDeep)
 		}
 		// The index gives each entry to one storage only, so this walk
 		// visits every entry at most once whatever the file says.

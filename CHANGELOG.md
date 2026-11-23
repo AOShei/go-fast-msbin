@@ -10,7 +10,7 @@ minor version may change the API.
 ## [0.1.0] - 2026-11-23
 
 The first release. Requires `go-fast-core` v0.1.2; the command also requires
-`go-fast-ooxml` v0.1.1. `IMPLEMENTATION_PLAN.md` has what each
+`go-fast-ooxml` v0.2.0. `IMPLEMENTATION_PLAN.md` has what each
 phase of the work found and measured.
 
 ### Added

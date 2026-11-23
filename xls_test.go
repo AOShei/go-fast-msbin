@@ -513,6 +513,8 @@ func TestExcel95(tt *testing.T) {
 		t.Formula5String(1, 2, 0, "\xe4\xe0", t.Cat(t.PtgRef5(0, 0, true, true), t.PtgStr5("\xe4\xe0"), t.PtgOp(0x08))),
 		t.FormulaTokens(1, 3, 0, 9, t.Cat(t.PtgArea5(0, 1, 0, 0), t.PtgAttrSum(), t.PtgRef3d5(1, 1, 4, 2), t.PtgOp(0x03))),
 		t.Note5(0, 0, "a note \xe8"), t.Row(1, true),
+		// A text box, whose text is not read: an object of kind 6.
+		t.Rec(0x005D, t.Cat(t.U16(0x0015, 0x0012, 0x0006, 9, 0x4011), make([]byte, 12), t.U16(0, 0))...),
 	}
 	data := t.Compound(map[string][]byte{"Book": t.Workbook5(globals, t.Sheet{Name: "\xcb\xe8\xf1\xf2", Records: sheet}, t.Sheet{Name: "Two", State: 1})})
 	doc := mustExtract(tt, data, &gofastcore.Options{Cells: true})
@@ -532,6 +534,9 @@ func TestExcel95(tt *testing.T) {
 	}
 	if d := blocks[0].Table.Display; len(d) != 1 || d[0].Row != 1 {
 		tt.Errorf("the hidden row: %+v", d)
+	}
+	if w, ok := warning(doc.Warnings, gofastcore.WarnInputUnreadContent); !ok || w.Message != "1 text box of Excel 5/95" {
+		tt.Errorf("warnings: %+v", doc.Warnings)
 	}
 }
 

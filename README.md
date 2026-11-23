@@ -129,7 +129,7 @@ parts, limits and embedded documents it raises:
 |---|---|
 | `input.repaired` | The compound file, or a stream of it, is damaged and was read as far as it could be; a presentation's chain of edits was found by search |
 | `input.stream_damaged` | A stream other than the main one could not be read to its end, and what was read of it is used: the properties (the message names the stream), a VBA project, an embedded object, a chart |
-| `input.unread_content` | Content of a kind that is not read; the message says what and how many |
+| `input.unread_content` | Content of a kind that is not read; the message says what and how many: dialog sheets, formulas that cannot be turned back into text, the text boxes of Excel 5/95, the sounds and videos of a presentation, the drop-down lists of a Word form (their entries; what is chosen is text). Not counted: a pivot cache whose source is gone, and form drop-downs in Word 6/95 documents |
 | `input.decrypted` | The file was encrypted and has been decrypted; `Metadata.Encrypted` is set. The message names the scheme and which password opened it |
 | `input.active_content` | A VBA project, macro sheets, or an action that starts a program; nothing is run |
 | `input.external_reference` | A linked object or file; nothing is fetched |

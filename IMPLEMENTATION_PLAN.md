@@ -538,6 +538,8 @@ The large files are as they were (`large.xls` 0.05 s, `large.doc` 0.06 s, `large
 
 What is left, by the profile of the workbooks: placing cells into tables (23%, bound by memory), number formats (17%), clearing and copying large allocations (15%).
 
+**Content that is not read, said** (2026-11-23, Andrew's decision after the sweep found it): only dialog sheets and formulas not read back raised `input.unread_content`, though the README listed more as not read. Now counted too: the sounds a presentation keeps (the records of its sound collection) and the videos and sounds it plays from outside (the movie and linked-audio records of its object list), the text boxes of an Excel 5/95 workbook (objects of kind 6), and the drop-down lists of a Word form (`FORMDROPDOWN` fields, in any story). In the corpus: sounds in 26 presentations, videos in 7, form drop-downs in 9 Word documents, Excel 5/95 text boxes in 1 workbook. Not counted: a pivot cache whose source is gone, form drop-downs in Word 6/95 documents, and the animation of slides, which is not content.
+
 **To release:** merge the open pull requests in order; date the changelog (`[0.1.0] - <date>`) in a pull request of its own; tag `v0.1.0` on `main`. The tag is Andrew's.
 
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).

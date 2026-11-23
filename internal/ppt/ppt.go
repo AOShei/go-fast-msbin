@@ -37,6 +37,13 @@ const (
 	rtVbaInfo             = 0x03FF
 	rtVbaInfoAtom         = 0x0400
 	rtExObjList           = 0x0409
+	rtSoundCollection     = 0x07E4
+	rtSound               = 0x07E6
+	rtExAviMovie          = 0x1006
+	rtExMCIMovie          = 0x1007
+	rtExMIDIAudio         = 0x100D
+	rtExCDAudio           = 0x100E
+	rtExWAVAudioLink      = 0x1010
 	rtPPDrawingGroup      = 0x040B
 	rtPPDrawing           = 0x040C
 	rtPlaceholderAtom     = 0x0BC3
@@ -139,6 +146,7 @@ type Deck struct {
 	byRef            map[uint32]uint32     // the storage of each embedded object, by the number shapes name it by
 	graphs           map[uint32]bool       // the storages that hold a Microsoft Graph chart
 	equations        map[uint32]bool       // the storages that are said to hold an equation
+	unread           map[string]int        // content of kinds that are not read: sounds, videos
 	first            int                   // the number of the first slide
 	omitTitle        bool                  // title slides show no date, footer or number
 	slideHF, notesHF headFoot              // what slides and notes pages show at head and foot
@@ -302,7 +310,7 @@ func (d *Deck) object(id uint32) (officeart.Rec, bool) {
 // store of pictures. It does not fail: a presentation whose structure
 // cannot be read has one part that says so.
 func Open(data []byte, opts *gofastcore.Options, cfg Config) *Deck {
-	d := &Deck{data: data, opts: opts, cfg: cfg, persist: map[uint32]uint32{}, notes: map[uint32]uint32{}, links: map[uint32]string{}, byRef: map[uint32]uint32{}, graphs: map[uint32]bool{}, equations: map[uint32]bool{}, first: 1, outline9: map[outlineKey][]auto{}}
+	d := &Deck{data: data, opts: opts, cfg: cfg, persist: map[uint32]uint32{}, notes: map[uint32]uint32{}, links: map[uint32]string{}, byRef: map[uint32]uint32{}, graphs: map[uint32]bool{}, equations: map[uint32]bool{}, unread: map[string]int{}, first: 1, outline9: map[outlineKey][]auto{}}
 	doc, _ := d.directory(cfg.CurrentEdit)
 	root, ok := d.object(doc)
 	if !ok || root.Type != rtDocument {
@@ -393,6 +401,15 @@ func Open(data []byte, opts *gofastcore.Options, cfg Config) *Deck {
 					b = rest
 				}
 			})
+		case rtSoundCollection:
+			// The sounds the file holds, which shapes and the passing
+			// from slide to slide play: not read.
+			officeart.Walk(r.Body, func(c officeart.Rec, _ int) bool {
+				if c.Type == rtSound {
+					d.unread[unit.UnreadSounds]++
+				}
+				return true
+			})
 		case rtPPDrawingGroup:
 			var past int
 			d.store, past = officeart.Store(r.Body, warn.MaxPictures)
@@ -414,6 +431,14 @@ func Open(data []byte, opts *gofastcore.Options, cfg Config) *Deck {
 					if le.Uint32(c.Body[12:]) == 6 && cfg.Equation != nil {
 						d.equations[at] = true
 					}
+				}
+				// Videos, and sounds kept outside the file or played from
+				// a disc: not read.
+				switch c.Type {
+				case rtExAviMovie, rtExMCIMovie:
+					d.unread[unit.UnreadVideos]++
+				case rtExMIDIAudio, rtExCDAudio, rtExWAVAudioLink:
+					d.unread[unit.UnreadSounds]++
 				}
 				if c.Type == rtExHyperlink && len(d.links) < 1<<16 {
 					// A link: its number, and where it leads.
@@ -777,6 +802,9 @@ func (d *Deck) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 	if programs > 0 {
 		out = append(out, gofastcore.Warning{Code: gofastcore.WarnInputActiveContent, Severity: gofastcore.SeverityInfo,
 			Message: strconv.Itoa(programs) + " actions on slides that start a program or run a macro; none was run"})
+	}
+	if len(d.unread) > 0 {
+		tallies = append(tallies[:len(tallies):len(tallies)], &unit.Tally{Unread: d.unread})
 	}
 	return append(out, unit.Summarize(tallies, d.damaged)...)
 }

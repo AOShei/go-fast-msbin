@@ -23,7 +23,7 @@ import (
 
 // unreadFormula is the kind under which formulas not read back are
 // counted.
-const unreadFormula = "formulas not read back"
+const unreadFormula = unit.UnreadFormulas
 
 // definedName is one name the workbook defines.
 type definedName struct {

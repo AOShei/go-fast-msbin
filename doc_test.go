@@ -156,6 +156,31 @@ func TestWordTable(tt *testing.T) {
 	}
 }
 
+// A drop-down list of a form shows what was chosen, which is text; the
+// entries to choose from are not read, and that is said, wherever the
+// list is.
+func TestWordFormDropDowns(tt *testing.T) {
+	data := wordFileOf(t.DocFile{
+		Main: []t.DocPara{
+			{Text: "Colour: \x13 FORMDROPDOWN \x14Red\x15, size: \x13 FORMDROPDOWN \x14Large\x15.\x02"},
+			{Text: "Name: \x13 FORMTEXT \x14Ada\x15."},
+		},
+		Footnotes: [][]t.DocPara{{{Text: "\x02 Or \x13 FORMDROPDOWN \x14Blue\x15."}}},
+	})
+	doc := mustExtract(tt, data, nil)
+	if got := doc.Parts[0].Blocks[0].Text; got != "Colour: Red, size: Large." {
+		tt.Errorf("the paragraph: %q", got)
+	}
+	if w, ok := warning(doc.Warnings, gofastcore.WarnInputUnreadContent); !ok || w.Message != "3 drop-down lists of form fields (their entries)" {
+		tt.Errorf("warnings: %+v", doc.Warnings)
+	}
+	// A form with text fields only has nothing that is not read.
+	plain := wordFileOf(t.DocFile{Main: []t.DocPara{{Text: "Name: \x13 FORMTEXT \x14Ada\x15."}}})
+	if _, ok := warning(mustExtract(tt, plain, nil).Warnings, gofastcore.WarnInputUnreadContent); ok {
+		tt.Error("a form of text fields says it has content that is not read")
+	}
+}
+
 // A long run of paragraphs of code is one block, and joining them costs
 // no more than their text: not a copy of the block for every paragraph.
 func TestWordLongRunOfCode(tt *testing.T) {

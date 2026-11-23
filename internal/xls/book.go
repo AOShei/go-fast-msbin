@@ -554,6 +554,23 @@ func (b *Book) Len() int {
 	return max(len(b.refs), 1)
 }
 
+// Weight returns what the sheet with the given index weighs for the
+// reading of several at a time: the bytes of its records. The cells of
+// a sheet take several times that in memory while it is read.
+func (b *Book) Weight(index int) int64 {
+	if index < 0 || index >= len(b.refs) {
+		return 0
+	}
+	ref := b.refs[index]
+	end := b.size
+	for _, other := range b.refs {
+		if other.pos > ref.pos && other.pos < end {
+			end = other.pos
+		}
+	}
+	return int64(max(end-ref.pos, 0))
+}
+
 // Stored returns the index of the stored part, or -1 if there is none.
 func (b *Book) Stored() int {
 	if !b.cfg.HasStored && len(b.names) == 0 && !b.macroSheets {

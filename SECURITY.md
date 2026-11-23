@@ -79,11 +79,16 @@ rounds for a file to raise.
   strangers) has to treat extracted text as untrusted input.
 - **Embedded files.** They are read only by the extractor the caller gives
   as `Options.Child`, within the same limits; without one they are listed.
-- **Memory.** The library holds the stream it reads (a workbook's, a
-  document's, a presentation's) in memory, and the document it builds. For
-  the largest files of the test corpus that is 100 to 150 MB of live heap.
-  `Options.Limits.MaxInputBytes` bounds the first, `MaxTextBytes` and
-  `Extractor.MaxCells` the second.
+- **Memory.** The library holds the stream it reads in memory (a
+  document's, a presentation's; of a workbook the records of the sheets
+  being read, and the whole stream if it is encrypted or damaged), and the
+  document it builds. `Options.Limits.MaxInputBytes` bounds the first,
+  `MaxTextBytes` and `Extractor.MaxCells` the second. Read a part at a time
+  (`File.Parts`, and the command's JSON), a file costs about the parts being
+  read: the sheets of a workbook are read ahead of the caller by no more
+  than 32 MiB of their records at a time. The command peaks at 160 MB on a
+  workbook of two million cells and at 70 MB on a Word document of 1.5
+  million words.
 
 ## How this is tested
 

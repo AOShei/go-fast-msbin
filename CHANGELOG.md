@@ -56,6 +56,15 @@ phase of the work found and measured.
   `Extractor.MaxCells`; fixed bounds reported with `limit.exceeded`.
   `SECURITY.md` lists them.
 
+### Memory
+
+- A workbook's stream is not held in memory: each sheet reads its own
+  records. Read a part at a time (`File.Parts`), the parts are handed on as
+  they are read, and large sheets are not read far ahead of the caller.
+- The command writes JSON a block and a row at a time. On a workbook of two
+  million cells it peaks at 160 MB (calamine: 215 MB), on a Word document
+  of 1.5 million words at 70 MB.
+
 ### Not read
 
 - Excel 2 to 4, Word 2 and older, and PowerPoint 95 and older: refused, with

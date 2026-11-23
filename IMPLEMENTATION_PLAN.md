@@ -462,7 +462,7 @@ On branch `phase-9-hardening`. Nothing new is read; the release is made ready.
 
 The times are ranges because the machine was shared and busy (a load of 9 to 22 on 24 threads while they were taken); the lower ends are from the quieter runs.
 
-- **The memory target for `large.xls` is not met.** It was 215 MB, calamine's peak as a process. The command peaks at 285 to 395 MB. The live heap is 105 to 130 MB (the workbook's stream, 38 MB, which is held whole; the shared strings; one sheet's cells and its table; the JSON of one part); the rest is the room Go's collector leaves, which a caller can set (`GOMEMLIMIT`, `GOGC`). Reading the stream in pieces instead of holding it would take about 38 MB off, and is a change to how all three readers read; it is not made for this release.
+- **The memory target for `large.xls` was not met at this point** (it is since 2026-11-23: see "After Phase 9"). It was 215 MB, calamine's peak as a process. The command peaks at 285 to 395 MB. The live heap is 105 to 130 MB (the workbook's stream, 38 MB, which is held whole; the shared strings; one sheet's cells and its table; the JSON of one part); the rest is the room Go's collector leaves, which a caller can set (`GOMEMLIMIT`, `GOGC`). Reading the stream in pieces instead of holding it would take about 38 MB off, and is a change to how all three readers read; it is not made for this release.
 - **The time targets are met** by the library. The command, which also writes the document as JSON, takes two to three times as long as the library for the workbook.
 
 **For go-fast-core's README** (proposed; not changed here, the file is another repository's):
@@ -492,6 +492,21 @@ Andrew asked for the shortfalls of the list above to be made good before the rel
   - **Measured**: the corpus has 509 equations in 41 files (103 in 11 Word documents, 406 in 30 presentations; none in a workbook): MTEF 2 36, MTEF 3 433, MTEF 5 40. All 509 are read without a refusal; all 103 of the Word documents are placed in their text, and 401 of the 406 of the presentations (the other 5 are not said to be equations by their presentation, and stay files). Against the twins, by letters and digits (`TestEquationTwins`): in the 7 Word documents with equations on lines of their own, 1,433 of the twins' letters and digits were missing here and 7 are now; in the 30 presentations, 6,464 and now 329. 1,198 are only here in the presentations (101 before): LibreOffice does not turn every equation into text, those of MathType among them.
   - **Fuzzing** (`FuzzLinear`): one finding, a template with no form of its own wrote each of its parts twice, so that nesting doubled the work at every level; fixed, the input kept. 57 million executions after, with none.
   - **Not read**: equations in workbooks (the corpus has none to check against) and in Word 6/95 documents.
+
+- **Memory** (the target that was not met). Measured first, on a quiet machine: the command peaked at 306 to 403 MB on `large.xls`. Three causes, in the order of what they cost:
+  1. *The command encoded each part whole.* `json.Encoder` builds a value in memory before it writes it, and again to indent it: a sheet of 21 MB of JSON cost about 100 MB, three sheets 300 MB of garbage in a run that the collector had no time to take back. The command now writes a part a block at a time and a table a row at a time, the same bytes (`TestPartIsWrittenAsTheEncoderWritesIt`, and `TestStreamedJSONOverTheCorpus` over every file, indented and not).
+  2. *The workbook's stream was held for as long as the file was open* (36.5 MB). Each sheet now reads its own records from the stream and lets them go (`xls.OpenStream`); an encrypted workbook, a short stream and one that cannot be read throughout are held as before. The document is the same for all 1,111 workbooks of the corpus, three ways each (`TestWorkbookRegions`); 913 of the 1,076 that open are read this way. Between sheets the library holds 5 MiB of `large.xls`, from 41.
+  3. *Parts were read in batches*, a batch whole before any of it was handed on: with 24 workers, 96 parts. They are now handed on in order as each is read (`TestPartsInOrder`: order, a caller that stops, a context that ends, a limit among the parts, no worker left behind; also under the race detector). For `File.Parts` the sheets of a workbook are read ahead by no more than 32 MiB of records at a time, and 64 MiB begun and not handed on; `File.Document` reads with every worker, as before.
+
+  | The command, writing JSON | before | after |
+  |---|---|---|
+  | `large.xls`, all processors | 0.16 to 0.18 s, 306 to 403 MB | 0.09 to 0.11 s, 156 to 160 MB |
+  | `large.xls`, one worker | 0.22 s, 253 to 265 MB | 0.16 s, 93 to 97 MB |
+  | `large.doc` | 0.10 s, 136 to 148 MB | 0.10 s, 69 to 72 MB |
+  | `large.ppt` | 0.03 s, 35 to 39 MB | 0.03 s, 33 to 35 MB |
+
+  The target of 215 MB (calamine's peak) is met. The library's own times are as they were (`large.xls` 0.052 s with all processors, 0.113 s with one). The figures of "Phase 9: result" were taken on a busy machine; these on a quiet one (load 1 to 1.5).
+- **Word XOR obfuscation on a real file**: see below.
 
 **To release:** merge the open pull requests in order; date the changelog (`[0.1.0] - <date>`) in a pull request of its own; tag `v0.1.0` on `main`. The tag is Andrew's.
 

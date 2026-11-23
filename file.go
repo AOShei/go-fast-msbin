@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-	"sync/atomic"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin/internal/cfb"
@@ -352,8 +351,9 @@ func equationIn(cf *cfb.File, path ...string) (text string, unmapped int, ok boo
 var wholeBooks = false
 
 // load reads into memory the stream the reader of the file's format
-// reads whole: a workbook's records. The stream is no larger than the
-// file, which Limits.MaxInputBytes bounds.
+// reads whole: a document's, a presentation's, and a workbook's where it
+// is encrypted or cannot be read throughout. The stream is no larger
+// than the file, which Limits.MaxInputBytes bounds.
 func (f *File) load() error {
 	if f.info.Format == detect.Doc {
 		s, err := f.stream("WordDocument")
@@ -728,7 +728,7 @@ func (f *File) kind() string {
 // out must not, so when one is met the parts are read again in order on
 // a reading of their own, and those already handed on, which are the
 // same in both, are passed over.
-func (f *File) pass(ctx context.Context, selected []int, window int, yield func(index int, res *unit.Result) bool) (*session, error) {
+func (f *File) pass(ctx context.Context, selected []int, window int, paced bool, yield func(index int, res *unit.Result) bool) (*session, error) {
 	sess, err := f.acquire()
 	if err != nil {
 		return nil, err
@@ -767,48 +767,121 @@ func (f *File) pass(ctx context.Context, selected []int, window int, yield func(
 		}
 		return sess, nil
 	}
+	// The parts are read by the workers and handed on in their order, each
+	// as soon as it and those before it are read. No more than window
+	// parts are begun and not yet handed on, so that a caller that takes
+	// the parts one at a time holds few of them. With paced set, a caller
+	// that is slower than the reading (it writes each part out) is not
+	// read far ahead of either: see ahead.
 	if window <= 0 {
 		window = len(selected)
 	}
-	handed := 0
-	for handed < len(selected) {
-		batch := selected[handed:min(handed+window, len(selected))]
-		results := make([]*unit.Result, len(batch))
-		var wg sync.WaitGroup
-		var next atomic.Int64
-		for w := 0; w < min(workers, len(batch)); w++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for {
-					k := int(next.Add(1)) - 1
-					if k >= len(batch) || ctx.Err() != nil {
-						return
-					}
-					results[k] = sess.src.Read(ctx, batch[k])
-				}
-			}()
+	n := len(selected)
+	weigh := func(k int) int64 {
+		if w, ok := sess.src.(interface{ Weight(index int) int64 }); ok && paced {
+			return w.Weight(selected[k])
 		}
+		return 0
+	}
+	var mu sync.Mutex
+	cond := sync.NewCond(&mu)
+	results := make([]*unit.Result, n)
+	next, begun, stop := 0, 0, false // the next part to begin; those begun and not handed on
+	var reading, held int64          // the weight of the parts being read; of those begun and not handed on
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				mu.Lock()
+				for !stop && ctx.Err() == nil && next < n && !(begun < window && ahead(begun, reading, held, weigh(next))) {
+					cond.Wait()
+				}
+				if stop || next >= n || ctx.Err() != nil {
+					mu.Unlock()
+					return
+				}
+				k, weight := next, weigh(next)
+				next++
+				begun++
+				reading += weight
+				held += weight
+				mu.Unlock()
+				res := sess.src.Read(ctx, selected[k])
+				mu.Lock()
+				results[k] = res
+				reading -= weight
+				cond.Broadcast()
+				mu.Unlock()
+			}
+		}()
+	}
+	// halt has the workers begin nothing more, and waits for what they
+	// are reading.
+	halt := func() {
+		mu.Lock()
+		stop = true
+		cond.Broadcast()
+		mu.Unlock()
 		wg.Wait()
+	}
+	stopped := context.AfterFunc(ctx, func() {
+		mu.Lock()
+		cond.Broadcast()
+		mu.Unlock()
+	})
+	defer stopped()
+	for handed := 0; handed < n; handed++ {
+		mu.Lock()
+		for results[handed] == nil && ctx.Err() == nil {
+			cond.Wait()
+		}
+		res := results[handed]
+		results[handed] = nil
+		mu.Unlock()
 		if err := ctx.Err(); err != nil {
+			halt()
 			return sess, err
 		}
-		limited := sess.src.Limited()
-		for _, res := range results {
-			limited = limited || res.Limited
-		}
-		if limited {
+		// A limit met by any part read so far, this one or one after it:
+		// the parts not yet handed on are read again, in order. Those
+		// handed on were read to their ends with nothing cut, and so are
+		// what a reading in order gives.
+		if res.Limited || sess.src.Limited() {
+			halt()
 			f.spoil(sess)
 			return f.inOrder(ctx, selected, handed, yield)
 		}
-		for k, res := range results {
-			handed++
-			if !yield(batch[k], res) {
-				return sess, nil
-			}
+		more := yield(selected[handed], res)
+		mu.Lock()
+		begun--
+		held -= weigh(handed)
+		cond.Broadcast()
+		mu.Unlock()
+		if !more {
+			break
 		}
 	}
+	halt()
 	return sess, nil
+}
+
+// How far a caller that takes the parts one at a time is read ahead of,
+// by the weight of the parts: the bytes of their records, for the sheets
+// of a workbook, whose cells take several times that in memory while
+// they are read. Small parts are read as many at a time as there are
+// workers.
+const (
+	maxReading = 32 << 20 // the weight of the parts read at one time
+	maxHeld    = 64 << 20 // and of those begun and not yet handed on
+)
+
+// ahead reports whether a part of the given weight may be begun, with
+// begun parts not yet handed on, of which those being read weigh reading
+// and all of them held. A part is always begun when none is.
+func ahead(begun int, reading, held, weight int64) bool {
+	return begun == 0 || weight == 0 || reading+weight <= maxReading && held+weight <= maxHeld
 }
 
 // inOrder reads the parts one after another on a reading of its own,
@@ -874,7 +947,7 @@ func (f *File) Document(ctx context.Context) (*gofastcore.Document, error) {
 	}
 	pictures := once{}
 	var tallies []*unit.Tally
-	sess, err := f.pass(ctx, selected, 0, func(index int, res *unit.Result) bool {
+	sess, err := f.pass(ctx, selected, 0, false, func(index int, res *unit.Result) bool {
 		pictures.keep(&res.Part)
 		doc.Parts = append(doc.Parts, res.Part)
 		tally, kept := res.Tally, res.Tally
@@ -936,7 +1009,7 @@ func (f *File) Parts(ctx context.Context) iter.Seq2[gofastcore.Part, error] {
 		}
 		pictures := once{}
 		stopped := false
-		_, err = f.pass(ctx, selected, 4*workers, func(index int, res *unit.Result) bool {
+		_, err = f.pass(ctx, selected, 4*workers, true, func(index int, res *unit.Result) bool {
 			pictures.keep(&res.Part)
 			tally := res.Tally
 			f.record(index, &tally)
@@ -961,7 +1034,7 @@ func (f *File) Part(ctx context.Context, number int) (gofastcore.Part, error) {
 		return gofastcore.Part{}, err
 	}
 	var part gofastcore.Part
-	_, err := f.pass(ctx, []int{number - 1}, 1, func(index int, res *unit.Result) bool {
+	_, err := f.pass(ctx, []int{number - 1}, 1, false, func(index int, res *unit.Result) bool {
 		part = res.Part
 		tally := res.Tally
 		f.record(index, &tally)

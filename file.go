@@ -20,6 +20,7 @@ import (
 	"github.com/AOShei/go-fast-msbin/internal/detect"
 	"github.com/AOShei/go-fast-msbin/internal/doc"
 	"github.com/AOShei/go-fast-msbin/internal/embed"
+	"github.com/AOShei/go-fast-msbin/internal/mtef"
 	"github.com/AOShei/go-fast-msbin/internal/ppt"
 	"github.com/AOShei/go-fast-msbin/internal/stored"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
@@ -240,7 +241,7 @@ func (f *File) reader() (*session, error) {
 			b, _, _ := unit.ReadAll(s, s.Size())
 			return b
 		}
-		cfg := doc.Config{HasStored: len(f.projects) > 0, Data: data,
+		cfg := doc.Config{HasStored: len(f.projects) > 0, Data: data, Equation: f.wordEquation,
 			Stored: func(ctx context.Context, part *stored.Part) { stored.Macros(ctx, f.cf, f.projects, part) }}
 		// The table stream the document names, read once.
 		table := func(name string) []byte {
@@ -261,7 +262,7 @@ func (f *File) reader() (*session, error) {
 		return &session{src: d}, nil
 	}
 	if f.deck != nil {
-		cfg := ppt.Config{Pictures: f.pictures, CurrentEdit: f.currentEdit, HasStored: len(f.projects) > 0, Chart: f.graph,
+		cfg := ppt.Config{Pictures: f.pictures, CurrentEdit: f.currentEdit, HasStored: len(f.projects) > 0, Chart: f.graph, Equation: equationOf,
 			Stored: func(ctx context.Context, part *stored.Part) { stored.Macros(ctx, f.cf, f.projects, part) }}
 		return &session{src: ppt.Open(f.deck, &f.opts, cfg)}, nil
 	}
@@ -306,6 +307,40 @@ func (f *File) graph(ctx context.Context, storage []byte) (blocks []gofastcore.B
 		}
 	}
 	return blocks, res.Tally.Limited, ok
+}
+
+// wordEquation reads the equation of the object of a Word document with
+// the given number: the storage of that number among its objects.
+func (f *File) wordEquation(id uint32) (text string, unmapped int, ok bool) {
+	return equationIn(f.cf, "ObjectPool", "_"+strconv.FormatUint(uint64(id), 10))
+}
+
+// equationOf reads the equation an embedded object holds, a compound
+// file given whole, into its linear form.
+func equationOf(storage []byte) (text string, unmapped int, ok bool) {
+	cf, err := cfb.Open(bytes.NewReader(storage), int64(len(storage)))
+	if err != nil {
+		return "", 0, false
+	}
+	return equationIn(cf)
+}
+
+// equationIn reads the equation in the storage of a compound file at
+// path: the stream the Equation Editor and MathType keep it in.
+func equationIn(cf *cfb.File, path ...string) (text string, unmapped int, ok bool) {
+	s, err := cf.Open(append(append([]string(nil), path...), mtef.Stream)...)
+	if err != nil {
+		return "", 0, false
+	}
+	data, cut, err := unit.ReadAll(s, mtef.MaxBytes)
+	if cut || err != nil {
+		return "", 0, false
+	}
+	b, ok := mtef.Native(data)
+	if !ok {
+		return "", 0, false
+	}
+	return mtef.Linear(b)
 }
 
 // load reads into memory the stream the reader of the file's format
@@ -539,7 +574,17 @@ func (f *File) known() (*session, []*unit.Tally) {
 // read.
 func (f *File) hand(ctx context.Context, limited bool) ([]*gofastcore.Document, *unit.Tally) {
 	read := !limited && !gofastcore.TextBudgetFrom(ctx).Spent()
-	res := embed.Hand(ctx, f.cf, &f.opts, f.objects, read)
+	objects := f.objects
+	if f.info.Format == detect.Doc && f.info.Version == detect.Word97 {
+		// An equation that is read is in its paragraph, and no file.
+		objects = make([]embed.Object, 0, len(f.objects))
+		for _, o := range f.objects {
+			if _, _, ok := equationIn(f.cf, o.Path...); !ok {
+				objects = append(objects, o)
+			}
+		}
+	}
+	res := embed.Hand(ctx, f.cf, &f.opts, objects, read)
 	// A presentation keeps its embedded objects in records of its
 	// stream, each a compound file.
 	f.mu.Lock()

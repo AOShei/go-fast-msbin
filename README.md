@@ -63,9 +63,20 @@ What is read:
   show and for a hidden shape. The presentation is what its last edit left
   of it; slides are read in parallel. A file saved for PowerPoint 95 and 97
   both is read from the PowerPoint 97 copy it holds. Not read: sound and
-  video, the equations of the equation editor (listed as embedded files),
-  and tables that are embedded Word or Excel objects (read as embedded
-  files).
+  video, and tables that are embedded Word or Excel objects (read as
+  embedded files).
+- **Equations** of the Equation Editor and of MathType, in Word documents
+  and presentations, in UnicodeMath, the linear form go-fast-ooxml writes
+  the equations of the newer formats in: `x=(−b±√(b^2−4ac))/(2a)`,
+  `∑_(i=1)^n▒(x_i)`, `■(a&b@c&d)`. Every character of the equation is kept,
+  in order. In a Word document an equation is text of its paragraph, and a
+  paragraph that is an equation and nothing else is a `formula` block with
+  `notation` `unicodemath`; on a slide an equation is a `formula` block
+  where its picture stands. An equation that is read is not listed among
+  the embedded files; one that cannot be read stays a picture and an
+  embedded file. A character Unicode has nothing for is U+FFFD, with
+  `text.unmapped_glyphs`. Not read: equations in workbooks and in Word 6/95
+  documents (embedded files, as before).
 - **Properties** (`Metadata`), from the two property-set streams: title,
   subject, author, keywords, dates, application; comments, template, last
   author, revision, category, manager, company and the program's version in
@@ -158,6 +169,7 @@ only; a program that uses it decides what reads embedded files, through
 | `internal/oleps` | Property sets: the document's properties |
 | `internal/vba`, `internal/stored` | The source of VBA modules, and the stored part they go to |
 | `internal/embed` | Embedded objects, handed on as files |
+| `internal/mtef` | Equations of the Equation Editor and MathType (MTEF 2, 3 and 5), written in UnicodeMath |
 | `internal/unit`, `internal/warn` | What the readers of the three formats share: the stream they read from, a part's result, the wording of bounds and repeated warnings |
 | `internal/cfb` | Compound files, the container of all three formats: sectors, allocation tables, directory, streams; writing one, and writing a storage of a file out as a file of its own |
 | `internal/detect` | What a file is: format, generation, encryption |

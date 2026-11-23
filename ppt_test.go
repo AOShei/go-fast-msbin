@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -394,6 +395,60 @@ func TestLaterEditsWin(tt *testing.T) {
 	}
 	doc = mustExtract(tt, t.Compound(dual), nil)
 	wantLines(tt, "dual storage", slideLines(&doc.Parts[0]), []string{"paragraph as saved again"})
+}
+
+// An equation of the Equation Editor is read with the slide that shows
+// it, in the linear form, where its picture stands; it is no embedded
+// file then. One that cannot be read stays a picture and a file.
+func TestPresentationEquations(tt *testing.T) {
+	eq := t.MTEF3(t.EqLine(t.EqString(t.EqVariable, "E"), t.EqString(t.EqSymbol, "="), t.EqString(t.EqVariable, "mc"),
+		t.EqTmpl(15, 0, t.EqNull(), t.EqLine(t.EqString(t.EqNumber, "2")))))
+	strange := t.MTEF3(t.EqLine(t.EqString(t.EqVariable, "a"), t.EqChar(t.EqSymbol, 0xE123)))
+	object := func(mtef []byte) []byte {
+		return t.Compound(map[string][]byte{"Equation Native": t.EquationNative(mtef), "\x01CompObj": make([]byte, 40)})
+	}
+	group, _ := t.PPTPictures(t.PNG(4, 3))
+	picture := []t.ArtProp{{ID: 0x0104, Value: 1}}
+	deck := pptDeck{
+		doc: [][]byte{
+			group,
+			t.PPTContainer(t.PPTExObjList, 0, t.PPTExObj(1, 6, 40), t.PPTExObj(2, 6, 41), t.PPTExObj(3, 6, 42)),
+		},
+		objects: map[uint32][]byte{40: t.PPTStorage(object(eq), true), 41: t.PPTStorage(object(eq[:len(eq)-4]), false), 42: t.PPTStorage(object(strange), true)},
+		slides: []pptSlide{{
+			shapes: [][]byte{
+				t.PPTShape{Top: 800, Left: 800, Right: 4000, Bottom: 1600, Data: t.PPTExObjRef(1), Props: picture}.Bytes(),
+				t.PPTShape{Top: 2400, Left: 800, Right: 4000, Bottom: 3200, Data: t.PPTExObjRef(2), Props: picture}.Bytes(),
+				t.PPTShape{Top: 3300, Left: 800, Right: 4000, Bottom: 4000, Data: t.PPTExObjRef(3), Props: picture}.Bytes(),
+			},
+			layout: 1,
+		}},
+	}
+	var handed []string
+	opts := &gofastcore.Options{Child: func(ctx context.Context, name, mime string, r io.ReaderAt, size int64, o *gofastcore.Options) (*gofastcore.Document, error) {
+		handed = append(handed, name)
+		return nil, gofastcore.ErrUnsupported
+	}}
+	doc := mustExtract(tt, deck.bytes(), opts)
+	wantLines(tt, "equations", slideLines(&doc.Parts[0]), []string{"formula E=mc^2", `image  0x0 ""`, "formula a\uFFFD"})
+	b := doc.Parts[0].Blocks[0]
+	if b.Attrs[gofastcore.AttrNotation] != gofastcore.NotationUnicodeMath || b.Loc.BBox != (gofastcore.Rect{X0: 100, Y0: 100, X1: 500, Y1: 200}) {
+		tt.Errorf("the equation: %+v, at %+v", b.Attrs, b.Loc.BBox)
+	}
+	if len(doc.Children) != 1 || len(handed) != 1 || handed[0] != "object41" {
+		tt.Errorf("embedded files: %d, handed on %v", len(doc.Children), handed)
+	}
+	if w, ok := warning(doc.Parts[0].Warnings, gofastcore.WarnTextUnmappedGlyphs); !ok || !strings.HasPrefix(w.Message, "1 characters of equations") {
+		tt.Errorf("warnings: %+v", doc.Parts[0].Warnings)
+	}
+	// A limit on the text holds for equations as for any text.
+	small := mustExtract(tt, deck.bytes(), &gofastcore.Options{Limits: gofastcore.Limits{MaxTextBytes: gofastcore.BlockCost + 3}})
+	if n := len(small.Parts[0].Blocks); n != 0 {
+		tt.Errorf("%d blocks within a limit below the first equation", n)
+	}
+	if _, ok := warning(small.Parts[0].Warnings, gofastcore.WarnLimitExceeded); !ok {
+		tt.Errorf("warnings: %+v", small.Parts[0].Warnings)
+	}
 }
 
 // A Microsoft Graph chart is read with the slide that shows it, from its

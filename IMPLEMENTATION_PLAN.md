@@ -364,7 +364,7 @@ Found on the way:
 
 - **The levels of the lists are not in the list table.** The table's length covers the lists; the levels follow it in the stream. Reading them from inside the table gave no list at all: the twin comparison showed 10,933 list items missing at once.
 - **A row's definition is often too long for its page of properties**, and is then in the Data stream with a pointer on the page. Without it a table broke into pieces at every such row.
-- **Not read**: form fields (their values are field results, and so are text; their drop-down entries are not given), equations (objects of the equation editor: listed as embedded files), the single-change form of a fast-saved piece's property modifier, and for Word 6/95 everything said above.
+- **Not read**: form fields (their values are field results, and so are text; their drop-down entries are not given), equations (read since 2026-11-23: see "After Phase 9"), the single-change form of a fast-saved piece's property modifier, and for Word 6/95 everything said above.
 
 ### Phase 6: result (2026-11-22)
 
@@ -476,7 +476,22 @@ The times are ranges because the machine was shared and busy (a load of 9 to 22 
 - The text of earlier saves that a file no longer points to (Q9: to be reviewed after the release).
 - Each library's owner decides whether its command routes embedded `.doc`, `.xls` and `.ppt` files here.
 - For go-fast-ooxml's owner: it translates a whole cell by its font where the format has fonts by run; its number formats pick the negative section for a value that rounds to zero, and round the fifteenth digit from the binary value.
-- Reading streams in pieces, for memory; the properties of encrypted presentations; equations; Word XOR obfuscation verified on a real file, if one is found.
+- Reading streams in pieces, for memory; the properties of encrypted presentations; equations; Word XOR obfuscation verified on a real file, if one is found. (Taken up on 2026-11-23: see "After Phase 9".)
+
+### After Phase 9: what fell short, made good (2026-11-23)
+
+Andrew asked for the shortfalls of the list above to be made good before the release. Each is a pull request of its own.
+
+- **`Metadata.Encrypted`** is set on every decrypted document (core's rule of 2026-11-23, `CORE_TO_MSBIN_README_AND_ENCRYPTED.md`), Excel's own password included. The soak holds the field to the warning over the corpus.
+- **The properties of an encrypted presentation**: see "Phase 7: result".
+- **Equations** (`internal/mtef`). The Equation Editor and MathType keep an equation as an embedded object with a stream `Equation Native` in MTEF. Versions 2, 3 and 5 are read and written in UnicodeMath, by go-fast-ooxml's rules for the linear form.
+  - *Word*: the mark between the code and the result of the object's field names the object (`sprmCPicLocation` with `sprmCFOle2`); the equation is text of the paragraph there, and its picture, the field's result, is left out. A paragraph that is an equation and nothing else is a `formula` block.
+  - *PowerPoint*: an object said to be an equation (`ExOleObjAtom`, sub-type 6) is a `formula` block where the shape that shows it stands.
+  - An equation that is read is not among the embedded files. One whose records break off or do not follow one another is refused whole, and stays a picture and a file.
+  - **Found in files, against the published description**: in version 3 a record of embellishments holds several, ended by a zero (in version 5, one); the brackets in a fence's list are the pieces they are drawn with, in a typeface of their own, so the selector decides the brackets; the templates of an operator "with limits" (selectors 42 and 43 of version 3) keep the operator the author wrote in a fourth slot, and are used to put a script on a letter.
+  - **Measured**: the corpus has 509 equations in 41 files (103 in 11 Word documents, 406 in 30 presentations; none in a workbook): MTEF 2 36, MTEF 3 433, MTEF 5 40. All 509 are read without a refusal; all 103 of the Word documents are placed in their text, and 401 of the 406 of the presentations (the other 5 are not said to be equations by their presentation, and stay files). Against the twins, by letters and digits (`TestEquationTwins`): in the 7 Word documents with equations on lines of their own, 1,433 of the twins' letters and digits were missing here and 7 are now; in the 30 presentations, 6,464 and now 329. 1,198 are only here in the presentations (101 before): LibreOffice does not turn every equation into text, those of MathType among them.
+  - **Fuzzing** (`FuzzLinear`): one finding, a template with no form of its own wrote each of its parts twice, so that nesting doubled the work at every level; fixed, the input kept. 57 million executions after, with none.
+  - **Not read**: equations in workbooks (the corpus has none to check against) and in Word 6/95 documents.
 
 **To release:** merge the open pull requests in order; date the changelog (`[0.1.0] - <date>`) in a pull request of its own; tag `v0.1.0` on `main`. The tag is Andrew's.
 

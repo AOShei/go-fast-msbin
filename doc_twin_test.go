@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin"
@@ -297,4 +298,93 @@ func TestDocTextAgainstLibreOffice(t *testing.T) {
 	recall := float64(same) / float64(max(same+there, 1))
 	f1 := 2 * precision * recall / (precision + recall)
 	t.Logf("%d documents: word precision %.4f, recall %.4f, F1 %.4f against LibreOffice's text", files, precision, recall, f1)
+}
+
+// The equations of the Equation Editor are read into the text LibreOffice
+// makes of them in the twin. The linear forms differ in their spaces and
+// brackets, so the letters and digits are compared: with the equations,
+// few of the twin's are missing here, and few more are only here.
+func TestEquationTwins(t *testing.T) {
+	if testing.Short() {
+		t.Skip("a comparison over the corpus")
+	}
+	bin := ooxmlCommand(t)
+	entries, err := msbintest.Corpus("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	letters := func(d *gofastcore.Document, formulas bool, into map[rune]int) (equations int) {
+		for i := range d.Parts {
+			for k := range d.Parts[i].Blocks {
+				b := &d.Parts[i].Blocks[k]
+				if b.Kind == gofastcore.KindNote || b.Kind == gofastcore.KindHeader || b.Kind == gofastcore.KindFooter {
+					// Field codes, which a twin does not keep, and what
+					// LibreOffice writes of its own on every slide.
+					continue
+				}
+				if b.Kind == gofastcore.KindFormula {
+					equations++
+					if !formulas {
+						continue
+					}
+				}
+				for _, r := range b.Text {
+					if unicode.IsLetter(r) || unicode.IsDigit(r) {
+						into[r]++
+					}
+				}
+			}
+		}
+		return equations
+	}
+	for _, format := range [][2]string{{"doc", "docx"}, {"ppt", "pptx"}} {
+		dir := filepath.Join("testdata", "corpus", "twins-"+format[0])
+		if _, err := os.Stat(dir); err != nil {
+			t.Skip("no twins: run testdata/oracle_lo.py --twin --format " + format[0])
+		}
+		var files, equations, total, missing, missingWithout, extra, extraWithout int
+		for _, e := range entries {
+			twin := filepath.Join(dir, e.SHA256+"."+format[1])
+			if _, err := os.Stat(twin); e.Format != format[0] || err != nil {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			doc, err := gofastmsbin.ExtractFile(ctx, e.Path, nil)
+			if err != nil {
+				cancel()
+				continue
+			}
+			with, without := map[rune]int{}, map[rune]int{}
+			n := letters(doc, true, with)
+			if n == 0 {
+				cancel()
+				continue
+			}
+			letters(doc, false, without)
+			out, err := exec.CommandContext(ctx, bin, "-quiet", twin).Output()
+			cancel()
+			var other gofastcore.Document
+			if err != nil || json.Unmarshal(out, &other) != nil {
+				continue
+			}
+			there := map[rune]int{}
+			letters(&other, true, there)
+			files++
+			equations += n
+			for r, want := range there {
+				total += want
+				missing += max(want-with[r], 0)
+				missingWithout += max(want-without[r], 0)
+			}
+			for r, have := range with {
+				extra += max(have-there[r], 0)
+				extraWithout += max(without[r]-there[r], 0)
+			}
+		}
+		t.Logf("%s: %d files with %d equations on lines of their own; of the twins' %d letters and digits, %d are missing here (%d without the equations); %d are only here (%d without)",
+			format[0], files, equations, total, missing, missingWithout, extra, extraWithout)
+		if files > 0 && (missing*2 > missingWithout || extra-extraWithout > (missingWithout-missing)/4) {
+			t.Errorf("%s: the equations do not bring the text nearer the twins'", format[0])
+		}
+	}
 }

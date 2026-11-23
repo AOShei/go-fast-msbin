@@ -49,6 +49,12 @@ All of it is by the same author and under the same MIT License.
                               title, a quotation or code are its
                               internal/wml/styles.go's.
   internal/hidden             from go-fast-ooxml (v0.1.1), unchanged.
+  internal/mtef               from go-fast-ooxml (v0.1.1): the rules of the
+                              linear form of an equation (when a part is put
+                              in parentheses, where a space ends a structure)
+                              are its internal/omml's. The reading of MTEF is
+                              written here, from the published description of
+                              the format and from files.
   internal/codepage/decode.go added here: decoding a whole string.
   internal/msbintest          the writers of compound files (compound.go) and
                               of VBA projects (vba.go), from go-fast-ooxml's

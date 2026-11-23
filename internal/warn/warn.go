@@ -57,3 +57,9 @@ func FitRows(budget *gofastcore.TextBudget, rows, cols int) int {
 	budget.Take(gofastcore.BlockCost + gofastcore.CellCost*int(fit)*cols)
 	return int(fit)
 }
+
+// UnmappedEquation is the message of gofastcore.WarnTextUnmappedGlyphs
+// for n characters of equations that Unicode has no character for.
+func UnmappedEquation(n int) string {
+	return strconv.Itoa(n) + " characters of equations that Unicode has no character for are U+FFFD"
+}

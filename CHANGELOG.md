@@ -30,6 +30,20 @@ minor version may change the API.
 
 ### Changed
 
+- **The last of a number's fifteen digits is rounded as LibreOffice rounds
+  it**: from the shortest decimal that is read back as the stored value,
+  half up, and no longer from the binary value. 664.5600532184905 is
+  `664.560053218491`, which was `664.56005321849`. In the corpus this
+  changes 5,857 of 18 million cells, in 58 workbooks, and datasheets of
+  charts in 5 presentations; go-fast-ooxml v0.3.0 has the same change, so
+  the two still agree. Three of those cells hold numbers below 1e-300,
+  which have fewer digits than fifteen and now show only those
+  (`3.3E-321`, which was `3.30035851421953E-321`).
+- A duration that rounds to nothing has no minus sign: `[h]:mm:ss` of
+  -1e-12 is `0:00:00`, which was `-0:00:00`.
+- The command requires `go-fast-ooxml` v0.3.0 (was v0.2.0), which reads a
+  long run of code paragraphs in an embedded `.docx` in linear time.
+
 - Faster on batches of ordinary files: the workbooks of the corpus in 0.77 s
   (was 1.09 s), the Word documents in 0.18 s (was 0.20 s), the
   presentations in 0.28 s (was 0.45 s). A workbook of many small sheets

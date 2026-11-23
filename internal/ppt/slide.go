@@ -88,6 +88,7 @@ type slideReader struct {
 	lost      warn.Lost
 	cut       bool
 	removed   int
+	unmapped  int // characters of equations that Unicode has nothing for
 	sawImage  bool
 	budget    bool
 	programs  int
@@ -720,7 +721,7 @@ func (s *slideReader) shapes(drawing []byte) []item {
 				}
 				// A text that is only fields has nothing to show until a
 				// slide fills them in.
-				if len(it.paras) > 0 || it.blip > 0 || it.fields || s.d.graphs[it.object] {
+				if len(it.paras) > 0 || it.blip > 0 || it.fields || s.d.graphs[it.object] || s.d.equations[it.object] {
 					items = append(items, it)
 				}
 			default:
@@ -1011,6 +1012,9 @@ func (d *Deck) slide(ctx context.Context, index int) *unit.Result {
 	if s.removed > 0 {
 		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(s.removed))
 	}
+	if s.unmapped > 0 {
+		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.UnmappedEquation(s.unmapped))
+	}
 	part.Finish()
 	return &unit.Result{Part: part, Tally: unit.Tally{Limited: s.cut || s.budget || capped, Programs: s.programs, Damaged: s.damaged}}
 }
@@ -1170,9 +1174,69 @@ func (s *slideReader) emit(part *gofastcore.Part, it *item, title bool) {
 	if s.d.graphs[it.object] && s.chart(part, it, place) {
 		return // the picture of a chart that is read is the chart drawn
 	}
+	if s.d.equations[it.object] && s.equation(part, it, place) {
+		return // and that of an equation the equation drawn
+	}
 	if it.blip > 0 {
 		s.picture(part, it, place)
 	}
+}
+
+// object returns the compound file of the embedded object a shape
+// shows. The file is charged to what the document may decode each time
+// it is read, compressed or not: a presentation can show one object in
+// as many shapes as it likes.
+func (s *slideReader) object(it *item, what string) ([]byte, bool) {
+	decoded := gofastcore.DecodeBudgetFrom(s.ctx)
+	left := int64(1) << 40
+	if decoded != nil {
+		left = decoded.Left()
+	}
+	data, compressed, ok := s.d.storage(it.object, left)
+	if ok && !decoded.Take(int64(len(data))) {
+		s.budget = true
+		return nil, false
+	}
+	if !ok {
+		// A compressed file that does not expand within what is left is
+		// over the limit; any other that cannot be read is damaged.
+		if compressed && decoded != nil && decoded.Left() <= left {
+			s.budget = true
+		} else {
+			s.damaged = append(s.damaged, what)
+		}
+		return nil, false
+	}
+	return data, true
+}
+
+// equation adds the equation a shape shows, in its linear form. It
+// reports whether the equation was read; one that was not is a picture
+// on the slide and a file among the embedded ones, as any other object.
+func (s *slideReader) equation(part *gofastcore.Part, it *item, place func(*gofastcore.Block)) bool {
+	if s.cut {
+		return true
+	}
+	data, ok := s.object(it, "an equation")
+	if !ok {
+		return false
+	}
+	text, unmapped, ok := s.d.cfg.Equation(data)
+	if !ok {
+		return false
+	}
+	text, _ = clean.String([]byte(text), clean.Prose)
+	if text == "" {
+		return true // an equation with nothing in it
+	}
+	if !s.take(gofastcore.BlockCost + len(text)) {
+		return true
+	}
+	s.unmapped += unmapped
+	b := gofastcore.Block{Kind: gofastcore.KindFormula, Text: text, Attrs: map[string]string{gofastcore.AttrNotation: gofastcore.NotationUnicodeMath}}
+	place(&b)
+	part.Blocks = append(part.Blocks, b)
+	return true
 }
 
 // chart adds the blocks of the Microsoft Graph chart a shape shows. It
@@ -1181,27 +1245,8 @@ func (s *slideReader) chart(part *gofastcore.Part, it *item, place func(*gofastc
 	if s.cut {
 		return true
 	}
-	decoded := gofastcore.DecodeBudgetFrom(s.ctx)
-	left := int64(1) << 40
-	if decoded != nil {
-		left = decoded.Left()
-	}
-	// The chart's file is charged to what the document may decode each
-	// time it is read, compressed or not: a presentation can show one
-	// object in as many shapes as it likes.
-	data, compressed, ok := s.d.storage(it.object, left)
-	if ok && !decoded.Take(int64(len(data))) {
-		s.budget = true
-		return false
-	}
+	data, ok := s.object(it, "a chart")
 	if !ok {
-		// A compressed file that does not expand within what is left is
-		// over the limit; any other that cannot be read is damaged.
-		if compressed && decoded != nil && decoded.Left() <= left {
-			s.budget = true
-		} else {
-			s.damaged = append(s.damaged, "a chart")
-		}
 		return false
 	}
 	blocks, cut, ok := s.d.cfg.Chart(s.ctx, data)

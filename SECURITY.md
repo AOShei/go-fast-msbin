@@ -53,6 +53,7 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Embedded objects | 4,096, to a depth of 64 storages | fixed | Those past it are not listed, and said |
 | VBA projects; modules of a project | 16; 4,096 | fixed | Those past it are not read, and said |
 | Nesting of fields in a Word document; of groups of shapes | 64 | fixed | What is deeper is read as text, or not read |
+| An equation: its bytes; the nesting of its parts | 1 MiB; 64 | fixed | The equation is not read as text: it stays a picture and an embedded file |
 
 The time a file takes follows from these: reading is linear in the size of
 the file and in the text it gives, and what a file repeats (a master's text

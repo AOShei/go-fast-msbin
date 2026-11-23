@@ -25,6 +25,11 @@ type Config struct {
 	// this reader finds (the source of its macros), or is nil.
 	Stored    func(ctx context.Context, part *stored.Part)
 	HasStored bool
+	// Equation reads the equation the embedded object with the given
+	// number holds into its linear form, and counts the characters
+	// Unicode has nothing for. ok is false for an object that holds no
+	// equation that can be read.
+	Equation func(id uint32) (text string, unmapped int, ok bool)
 }
 
 // Doc is a Word document opened for reading: what its text is made of
@@ -359,6 +364,9 @@ func (d *Doc) Read(ctx context.Context, index int) *unit.Result {
 	}
 	if r.unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(r.unmapped))
+	}
+	if r.unmappedEq > 0 {
+		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.UnmappedEquation(r.unmappedEq))
 	}
 	if r.removed > 0 {
 		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(r.removed))

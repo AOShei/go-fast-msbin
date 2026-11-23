@@ -101,7 +101,12 @@ type Config struct {
 	// Chart reads the compound file of a Microsoft Graph chart into the
 	// blocks of the chart, or reports that it is none. cut says the text
 	// the document may hold ran out.
-	Chart     func(ctx context.Context, storage []byte) (blocks []gofastcore.Block, cut, ok bool)
+	Chart func(ctx context.Context, storage []byte) (blocks []gofastcore.Block, cut, ok bool)
+	// Equation reads the compound file of an equation of the Equation
+	// Editor into its linear form, and counts the characters Unicode has
+	// nothing for. ok is false for a file that holds no equation that
+	// can be read.
+	Equation  func(storage []byte) (text string, unmapped int, ok bool)
 	HasStored bool
 }
 
@@ -133,6 +138,7 @@ type Deck struct {
 	links            map[uint32]string     // the addresses of the links, by number
 	byRef            map[uint32]uint32     // the storage of each embedded object, by the number shapes name it by
 	graphs           map[uint32]bool       // the storages that hold a Microsoft Graph chart
+	equations        map[uint32]bool       // the storages that are said to hold an equation
 	first            int                   // the number of the first slide
 	omitTitle        bool                  // title slides show no date, footer or number
 	slideHF, notesHF headFoot              // what slides and notes pages show at head and foot
@@ -296,7 +302,7 @@ func (d *Deck) object(id uint32) (officeart.Rec, bool) {
 // store of pictures. It does not fail: a presentation whose structure
 // cannot be read has one part that says so.
 func Open(data []byte, opts *gofastcore.Options, cfg Config) *Deck {
-	d := &Deck{data: data, opts: opts, cfg: cfg, persist: map[uint32]uint32{}, notes: map[uint32]uint32{}, links: map[uint32]string{}, byRef: map[uint32]uint32{}, graphs: map[uint32]bool{}, first: 1, outline9: map[outlineKey][]auto{}}
+	d := &Deck{data: data, opts: opts, cfg: cfg, persist: map[uint32]uint32{}, notes: map[uint32]uint32{}, links: map[uint32]string{}, byRef: map[uint32]uint32{}, graphs: map[uint32]bool{}, equations: map[uint32]bool{}, first: 1, outline9: map[outlineKey][]auto{}}
 	doc, _ := d.directory(cfg.CurrentEdit)
 	root, ok := d.object(doc)
 	if !ok || root.Type != rtDocument {
@@ -397,13 +403,16 @@ func Open(data []byte, opts *gofastcore.Options, cfg Config) *Deck {
 				if c.Type == rtExOleObjAtom && len(c.Body) >= 24 && len(d.objects) < warn.MaxObjects {
 					// An embedded object: the number shapes name it by,
 					// what made it, and the storage that holds it. A
-					// Microsoft Graph chart is read with the slide that
-					// shows it.
+					// Microsoft Graph chart and an equation are read with
+					// the slide that shows them.
 					at := le.Uint32(c.Body[16:])
 					d.objects = append(d.objects, at)
 					d.byRef[le.Uint32(c.Body[8:])] = at
 					if le.Uint32(c.Body[12:]) == 4 && cfg.Chart != nil {
 						d.graphs[at] = true
+					}
+					if le.Uint32(c.Body[12:]) == 6 && cfg.Equation != nil {
+						d.equations[at] = true
 					}
 				}
 				if c.Type == rtExHyperlink && len(d.links) < 1<<16 {
@@ -785,6 +794,12 @@ func (d *Deck) Objects(ctx context.Context) (ids []uint32, files [][]byte, limit
 		if !ok || compressed && !decoded.Take(int64(len(data))) {
 			limited = limited || compressed
 			data = nil
+		}
+		if data != nil && d.equations[id] {
+			// An equation that is read is on its slide, and no file.
+			if _, _, ok := d.cfg.Equation(data); ok {
+				continue
+			}
 		}
 		ids, files = append(ids, id), append(files, data)
 	}

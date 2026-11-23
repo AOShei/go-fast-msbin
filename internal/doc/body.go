@@ -49,6 +49,7 @@ type field struct {
 	code     []byte
 	inResult bool
 	href     string
+	equation bool // the field of an embedded equation that was read: its result, a picture, is left out
 }
 
 // Bounds on fields.
@@ -73,6 +74,10 @@ type reader struct {
 	chpx bins
 	num  *numState
 	root *reader // the reader of the body, for one that reads a note
+
+	equations  map[uint32]*equation // those read, by the number of their object
+	eqBytes    int                  // the bytes of equations in the paragraph being read
+	unmappedEq int                  // characters of equations that Unicode has nothing for
 
 	lost     warn.Lost
 	cut      bool
@@ -503,6 +508,13 @@ func (r *reader) run(cp, end int64, p *piece, c *chp) {
 					f := &r.fields[n-1]
 					f.inResult = true
 					f.href = hyperlink(f.code)
+					// The field of an embedded object: the mark between
+					// its code and its result names the object. An
+					// equation is text of the paragraph, where the picture
+					// of it stands.
+					if c.hasPic && !c.data && (c.ole2 || c.obj) && n <= maxFieldDepth {
+						f.equation = r.equation(a, c.pic)
+					}
 				}
 				continue
 			case chFieldEnd:
@@ -559,6 +571,8 @@ func (r *reader) run(cp, end int64, p *piece, c *chp) {
 			case u == chSymbol && c.sym:
 				r.attr(a)
 				r.symbol(c.symFont, rune(c.symChar))
+			case u == chPicture && len(r.fields) > 0 && r.fields[len(r.fields)-1].equation:
+				// The picture of an equation that was read.
 			case u == chPicture && c.hasPic && !c.data && len(r.pics) < 1<<12:
 				r.pics = append(r.pics, c.pic)
 			}
@@ -599,6 +613,53 @@ func (r *reader) run(cp, end int64, p *piece, c *chp) {
 			r.put(0x00AD)
 		}
 	}
+}
+
+// maxEquations bounds the objects of a document that are looked at for
+// an equation, each once: what is read of one is kept for the next place
+// that shows it. A file has no more embedded objects than this that are
+// found at all (warn.MaxObjects).
+const maxEquations = 2 * warn.MaxObjects
+
+// equation appends the equation of the embedded object with the given
+// number, in its linear form. It reports whether the object holds an
+// equation that could be read.
+func (r *reader) equation(a attrs, id uint32) bool {
+	if r.d.cfg.Equation == nil {
+		return false
+	}
+	eq, seen := r.equations[id]
+	if !seen && len(r.equations) >= maxEquations {
+		return false // more objects than a file may have
+	}
+	if !seen {
+		text, unmapped, ok := r.d.cfg.Equation(id)
+		if ok {
+			var removed int
+			text, removed = clean.String([]byte(text), clean.Prose)
+			eq = &equation{text: text, unmapped: unmapped, removed: removed}
+		}
+		if r.equations == nil {
+			r.equations = map[uint32]*equation{}
+		}
+		r.equations[id] = eq
+	}
+	if eq == nil {
+		return false
+	}
+	r.flushHigh()
+	r.attr(a)
+	r.buf = append(r.buf, eq.text...)
+	r.eqBytes += len(eq.text)
+	r.unmappedEq += eq.unmapped
+	r.removed += eq.removed
+	return true
+}
+
+// equation is an equation read from an embedded object.
+type equation struct {
+	text              string
+	unmapped, removed int
 }
 
 // symbol appends a character of the symbol font with the given number.
@@ -904,6 +965,7 @@ func (r *reader) emit(out *[]gofastcore.Block, b gofastcore.Block) {
 func (r *reader) chars(cp, end int64, st *style) {
 	t := &r.d.txt
 	r.buf, r.spans = r.buf[:0], r.spans[:0]
+	r.eqBytes = 0
 	r.cur, r.curStart, r.high = attrs{}, 0, 0
 	for cp < end {
 		i := t.find(cp)
@@ -953,6 +1015,8 @@ func (r *reader) finish(p *pap, st *style, cp0, end int64) (gofastcore.Block, bo
 		return gofastcore.Block{}, false
 	}
 	b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: string(raw[from:to])}
+	// A paragraph that is an equation and nothing else.
+	formula := r.eqBytes > 0 && r.eqBytes == to-from
 	b.Spans, b.Display = hidden.Settle(r.spans, from, to, raw)
 	// The bookmark that starts the paragraph is its anchor.
 	if mark, ok := r.d.bookmarks[cp0]; ok && r.root == nil {
@@ -999,6 +1063,9 @@ func (r *reader) finish(p *pap, st *style, cp0, end int64) (gofastcore.Block, bo
 		b.Kind, b.Level = gofastcore.KindQuote, 1
 	case kind == roleCode:
 		b.Kind = gofastcore.KindCode
+	case formula:
+		b.Kind = gofastcore.KindFormula
+		b.Attrs = map[string]string{gofastcore.AttrNotation: gofastcore.NotationUnicodeMath}
 	}
 	return b, true
 }

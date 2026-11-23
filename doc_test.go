@@ -1,6 +1,8 @@
 package gofastmsbin_test
 
 import (
+	"context"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -149,6 +151,52 @@ func TestWordTable(tt *testing.T) {
 	}
 	if !reflect.DeepEqual(b[1].Table.Merges, []gofastcore.Merge{{Row: 1, Col: 0, RowSpan: 1, ColSpan: 2}, {Row: 2, Col: 0, RowSpan: 2, ColSpan: 1}}) || b[1].Table.HeaderRows != 1 {
 		tt.Errorf("merges %+v, header rows %d", b[1].Table.Merges, b[1].Table.HeaderRows)
+	}
+}
+
+// An equation of the Equation Editor is an object the text shows through
+// a field; the mark between the field's code and its result names the
+// object. The equation is text of its paragraph, in the linear form, and
+// a paragraph that is an equation and nothing else is a formula. It is
+// no embedded file then; an object that holds no equation stays one.
+func TestWordEquations(tt *testing.T) {
+	eq := func(s string) []byte {
+		return t.EquationNative(t.MTEF3(t.EqLine(t.EqString(t.EqVariable, s), t.EqTmpl(15, 0, t.EqNull(), t.EqLine(t.EqString(t.EqNumber, "2"))))))
+	}
+	// A paragraph around a field whose mark names the object.
+	para := func(before string, id uint32, after string) t.DocPara {
+		code := "\x13 EMBED Equation.3 "
+		object := t.Cat(t.Sprm(0x6A03, byte(id), byte(id>>8), byte(id>>16), byte(id>>24)), t.Sprm(0x080A, 1))
+		picture := t.Cat(t.Sprm(0x0855, 1), t.Sprm(0x6A03, 0, 0, 0, 0))
+		return t.DocPara{Text: before + code + "\x14\x01\x15" + after,
+			Runs: []t.DocRun{{Len: len(before) + len(code)}, {Len: 1, Chpx: object}, {Len: 1, Chpx: picture}, {Len: 1 + len(after)}}}
+	}
+	streams := t.WordStreams(t.DocFile{Styles: docStyles, Main: []t.DocPara{
+		para("The energy is ", 1001, ", he wrote."),
+		para("", 1002, ""),
+		para("And a sheet: ", 1003, "."),
+		para("Again ", 1001, "."),
+	}})
+	streams["ObjectPool/_1001/Equation Native"] = eq("mc")
+	streams["ObjectPool/_1002/Equation Native"] = eq("x")
+	streams["ObjectPool/_1003/Workbook"] = t.Cat(t.BOF(0x0005), t.EOF())
+	var handed []string
+	opts := &gofastcore.Options{Child: func(ctx context.Context, name, mime string, r io.ReaderAt, size int64, o *gofastcore.Options) (*gofastcore.Document, error) {
+		handed = append(handed, name)
+		return nil, gofastcore.ErrUnsupported
+	}}
+	doc := mustExtract(tt, t.Compound(streams), opts)
+	wantLines(tt, "equations", lines(&doc.Parts[0]), []string{
+		"paragraph The energy is mc^2, he wrote.", "note:field EMBED Equation.3",
+		"formula x^2", "note:field EMBED Equation.3",
+		"paragraph And a sheet: .", "note:field EMBED Equation.3",
+		"paragraph Again mc^2.", "note:field EMBED Equation.3",
+	})
+	if got := doc.Parts[0].Blocks[2].Attrs[gofastcore.AttrNotation]; got != gofastcore.NotationUnicodeMath {
+		tt.Errorf("the formula's notation: %q", got)
+	}
+	if len(doc.Children) != 1 || len(handed) != 1 || !strings.HasPrefix(handed[0], "_1003") {
+		tt.Errorf("embedded files: %d, handed on %v", len(doc.Children), handed)
 	}
 }
 

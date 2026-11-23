@@ -33,6 +33,10 @@ phase of the work found and measured.
   Microsoft Graph charts from their datasheets. Slides are read in parallel.
 - **Properties** as `Metadata`; **VBA modules** as code in the stored part,
   never run; **embedded files** as `Children`, through `Options.Child`.
+- **Equations** of the Equation Editor and MathType in Word documents and
+  presentations, in UnicodeMath as go-fast-ooxml writes those of the newer
+  formats: text of their paragraph in Word, a `formula` block where a
+  paragraph or a shape is an equation and nothing else.
 - **Encrypted files**, with `Options.Password`: XOR obfuscation, RC4 and RC4
   CryptoAPI. `ErrPasswordRequired`, `ErrWrongPassword`; the password Excel
   uses when none is set is tried unasked. A decrypted document has
@@ -57,8 +61,8 @@ phase of the work found and measured.
 - Excel 2 to 4, Word 2 and older, and PowerPoint 95 and older: refused, with
   an error that says which.
 - The text of earlier saves that the file as it stands no longer points to.
-- Equations (listed as embedded files), sound and video, form-field
-  drop-down entries in Word, the pivot caches of sources that are gone, the
+- Equations in workbooks and in Word 6/95 documents (listed as embedded
+  files), sound and video, form-field drop-down entries in Word, the pivot caches of sources that are gone, the
   text boxes of Excel 5/95, and in Word 6/95 documents lists, hidden text
   and tracked changes.
 - The properties of an encrypted workbook or Word document that keeps them

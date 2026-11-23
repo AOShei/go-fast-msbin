@@ -92,7 +92,7 @@ rounds for a file to raise.
 
 ## How this is tested
 
-Eight fuzz targets run in CI and were run for the release (the counts are in
+Nine fuzz targets run in CI and were run for the release (the counts are in
 `IMPLEMENTATION_PLAN.md`). A soak test reads all 2,528 files of the corpus,
 the exploit files of LibreOffice's and POI's test suites among them, four
 ways each: every result a valid document or a shared error, the same

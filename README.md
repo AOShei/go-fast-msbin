@@ -198,7 +198,7 @@ only; a program that uses it decides what reads embedded files, through
 | `internal/detect` | What a file is: format, generation, encryption |
 | `internal/codepage`, `internal/numfmt`, `internal/symbol`, `internal/label`, `internal/clean` | Copied from the other go-fast libraries: code pages, number formats, symbol fonts, list labels, the text conventions of the shared model |
 | `internal/msbintest` | Test harness: a second writer of compound files; writers of property sets, VBA projects, workbooks, Word documents and presentations, and of the three schemes of encryption; the corpus manifest |
-| `testdata/oracle_shared.py`, `oracle_xls.py`, `oracle_lo.py` | What olefile and olevba read of each corpus file, what xlrd reads of each workbook and what LibreOffice shows of it, for the tests that compare the library with them |
+| `testdata/oracle_shared.py`, `oracle_xls.py`, `oracle_lo.py`, `oracle_crypt.py` | What olefile and olevba read of each corpus file, what xlrd reads of each workbook and what LibreOffice shows of it, for the tests that compare the library with them; and LibreOffice opening, with a password, what the test writer encrypts |
 | `testdata/corpus.json`, `testdata/fetch.py` | Manifest of 2,528 real files from the test suites of Apache POI, Apache Tika and LibreOffice, from data.gov.uk and from Govdocs1, and the script that downloads them. The files are not in the repository. One file in five is held out: scored, never looked at |
 | `bench` | The baselines of the tools in use today (`baseline.md`) and the script that measures them |
 
@@ -216,10 +216,11 @@ python3 testdata/oracle_lo.py testdata testdata/corpus/twins-doc --twin --format
 python3 testdata/oracle_lo.py testdata testdata/corpus/oracle-lo-doc --text --format doc
 go test -run 'TestDocTwins|TestDocTextAgainstLibreOffice' -v .
 python3 testdata/oracle_lo.py testdata testdata/corpus/twins-ppt --twin --format ppt
-go test -run TestPptTwins -v .
+go test -run 'TestPptTwins|TestEquationTwins' -v .
 go test -run 'TestCellsAgainstXlrd|TestShownAgainstLibreOffice|TestTwins|TestFormulasAgainstTwins' -v .
 go test -run '^$' -bench Large .                                               # needs bench/baseline.py generate
 go test -run 'TestSoak|TestAllocationBudgets' -v .                             # the whole corpus four ways; what the large files allocate
+go test -run TestWorkbookRegions -v .                                          # every workbook read both ways: its stream in memory, a sheet at a time
 go run ./cmd/gofastmsbin file.doc
 GOFAST_MSBIN_LIBREOFFICE=1 go test -run TestEncryptedWordAgainstLibreOffice . # LibreOffice opens what the test writer encrypts; contained
 ```

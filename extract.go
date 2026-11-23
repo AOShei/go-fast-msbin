@@ -109,7 +109,8 @@ func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastco
 //
 // An encrypted file is opened with Options.Password; a workbook
 // encrypted with the password Excel uses when none was set is opened
-// without one. The document then has the warning input.decrypted.
+// without one. The document then has Metadata.Encrypted set and the
+// warning input.decrypted.
 //
 // An error wraps one of the gofastcore errors:
 //

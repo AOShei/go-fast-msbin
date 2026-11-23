@@ -721,7 +721,9 @@ func (f *File) kind() string {
 
 // pass reads the parts with the given indexes and hands each to yield,
 // in order, until yield returns false. window is how many parts may be
-// read ahead of the one being handed on; zero means all of them.
+// begun and not yet handed on; zero means all of them. paced is for a
+// caller that takes the parts one at a time: large parts are then not
+// read far ahead of it (see ahead).
 //
 // With more than one worker, which parts are read before a limit is
 // reached depends on which worker gets there first. What a limit leaves

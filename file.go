@@ -51,6 +51,8 @@ type File struct {
 	info        detect.Info
 	source      gofastcore.Source
 	meta        gofastcore.Metadata
+	metaFrom    int                  // the warnings of the properties, among those of opening: from here
+	metaTo      int                  // to here
 	opened      []gofastcore.Warning // warnings about the document known when it was opened
 	projects    [][]string           // the storages that hold a VBA project
 	objects     []embed.Object       // the embedded objects
@@ -171,8 +173,10 @@ func (e *Extractor) open(ctx context.Context, r io.ReaderAt, size int64, opts *g
 			"the compound file is damaged, and was read as far as it could be: "+clean.Label(cf.Damaged))
 	}
 	var ws []gofastcore.Warning
-	f.meta, ws = metadata(cf, f.stream)
+	f.meta, ws = metadata(f.hasStream, f.stream)
+	f.metaFrom = len(f.opened)
 	f.opened = append(f.opened, ws...)
+	f.metaTo = len(f.opened)
 	f.projects = stored.Projects(cf)
 	if len(f.projects) > 0 {
 		warn(gofastcore.SeverityInfo, gofastcore.WarnInputActiveContent, "a VBA project (macros); its code is read as text into the stored part, and none of it is run")
@@ -201,6 +205,10 @@ func (e *Extractor) open(ctx context.Context, r io.ReaderAt, size int64, opts *g
 // warnCap is the message for the embedded objects past the bound on
 // their number.
 func warnCap(past int64) string { return warn.CapObjects.Message(past) }
+
+// hasStream reports whether the file has a stream of the name at its
+// root.
+func (f *File) hasStream(name string) bool { return f.cf.Has(name) && !f.cf.IsStorage(name) }
 
 // stream opens a stream at the root of the file as the readers see it.
 func (f *File) stream(name string) (unit.Stream, error) {

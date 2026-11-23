@@ -61,4 +61,6 @@ phase of the work found and measured.
   drop-down entries in Word, the pivot caches of sources that are gone, the
   text boxes of Excel 5/95, and in Word 6/95 documents lists, hidden text
   and tracked changes.
-- The properties of an encrypted presentation.
+- The properties of an encrypted workbook or Word document that keeps them
+  encrypted in a stream of their own; those of an encrypted presentation
+  are read.

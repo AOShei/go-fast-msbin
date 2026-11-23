@@ -5,6 +5,7 @@ import (
 	"crypto/rc4"
 	"crypto/sha1"
 	"encoding/binary"
+	"sort"
 	"unicode/utf16"
 )
 
@@ -254,5 +255,36 @@ func (f *PPTFile) Encrypt(objects map[uint32][]byte, doc uint32, pictures []byte
 		b = b[8+size:]
 	}
 	streams["Pictures"] = pics
+	if len(f.Summary) > 0 {
+		streams["EncryptedSummary"] = encryptedSummary(m, f.Summary)
+	}
 	return streams
+}
+
+// encryptedSummary writes the stream that holds the property sets of an
+// encrypted file ([MS-OFFCRYPTO] 2.3.5.4): each set encrypted with a key
+// of its own, then the list that says where each is; the list, and the
+// eight bytes at the start that say where the list is, each encrypted
+// with the first key.
+func encryptedSummary(m cipherMaker, sets map[string][]byte) []byte {
+	names := make([]string, 0, len(sets))
+	for name := range sets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	data := make([]byte, 8)
+	list := U32(uint32(len(names)))
+	for i, name := range names {
+		c := append([]byte(nil), sets[name]...)
+		block := uint16(i + 1)
+		m.block(uint32(block)).XORKeyStream(c, c)
+		wide := utf16le(name)
+		list = Cat(list, U32(uint32(len(data)), uint32(len(c))), U16(block), []byte{byte(len(wide) / 2), 1}, U32(0), wide, U16(0))
+		data = append(data, c...)
+	}
+	m.block(0).XORKeyStream(list, list)
+	binary.LittleEndian.PutUint32(data, uint32(len(data)))
+	binary.LittleEndian.PutUint32(data[4:], uint32(len(list)))
+	m.block(0).XORKeyStream(data[:8], data[:8])
+	return append(data, list...)
 }

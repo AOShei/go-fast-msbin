@@ -233,9 +233,12 @@ func FuzzEncrypted(f *testing.F) {
 	group, pictures := msbintest.PPTPictures(msbintest.PNG(4, 3))
 	deck := richDeck()
 	deck.doc = append(deck.doc, group)
-	var file msbintest.PPTFile
+	file := msbintest.PPTFile{Summary: map[string][]byte{"\x05SummaryInformation": msbintest.PropertyStream(
+		msbintest.Section{Format: msbintest.FmtSummary, CodePage: 1252, Props: []msbintest.Prop{{ID: 2, Value: "a title"}}})}}
 	streams := file.Encrypt(deck.all(), pptDoc, pictures, "pw")
 	f.Add(uint8(2), streams["PowerPoint Document"], streams["Pictures"])
+	// The same bytes are the stream of the encrypted properties.
+	f.Add(uint8(2), streams["PowerPoint Document"], streams["EncryptedSummary"])
 	user := streams["Current User"]
 	f.Fuzz(func(t *testing.T, kind uint8, a, b []byte) {
 		if len(a)+len(b) > 1<<20 {
@@ -250,7 +253,7 @@ func FuzzEncrypted(f *testing.F) {
 		case 1:
 			data = msbintest.Compound(map[string][]byte{"WordDocument": a, "1Table": b, "0Table": b, "Data": b})
 		default:
-			data = msbintest.Compound(map[string][]byte{"PowerPoint Document": a, "Pictures": b, "Current User": user})
+			data = msbintest.Compound(map[string][]byte{"PowerPoint Document": a, "Pictures": b, "EncryptedSummary": b, "Current User": user})
 		}
 		doc, err := extract(data, &gofastcore.Options{Password: "pw", Images: gofastcore.ImagesData})
 		checkOutcome(t, doc, err)

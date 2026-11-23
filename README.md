@@ -90,9 +90,12 @@ What is read:
   document's `Metadata.Encrypted` is set, whoever's password opened the
   file, and it has the warning `msbin.decrypted`, which names the scheme and
   says which password that was. These
-  schemes are weak: they are read because files kept in them exist. Not
-  read: the properties of an encrypted presentation, which are encrypted in a
-  stream of their own.
+  schemes are weak: they are read because files kept in them exist. The
+  properties of an encrypted presentation, which are kept encrypted in a
+  stream of their own, are read from it. Not read: the properties of a
+  workbook or Word document that encrypts them in the same way (none was
+  found to check a reader against); such a file has the properties its
+  plain streams hold.
 - **Damaged containers**: a wrong byte-order mark, a directory whose chain of
   sectors breaks and lost short streams are read past, with `input.repaired`.
 

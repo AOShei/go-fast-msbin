@@ -58,7 +58,7 @@ func TestAllocationBudgets(t *testing.T) {
 		name          string
 		bytes, allocs uint64
 	}{
-		{"large.xls", 210 << 20, 2_000},  // 1,966,080 cells: 168 MB in 240 allocations
+		{"large.xls", 210 << 20, 2_000},  // 1,966,080 cells: 173 MB in 270 allocations
 		{"large.doc", 80 << 20, 60_000},  // 1.5 million words: 62 MB in 41,800
 		{"large.ppt", 55 << 20, 350_000}, // 1,500 slides: 43 MB in 275,700
 	} {

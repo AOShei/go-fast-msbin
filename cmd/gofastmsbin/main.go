@@ -7,9 +7,10 @@
 //
 // A directory stands for the Office files in it and below it. With one
 // input the JSON is indented; with several, each document is one line.
-// JSON is written a part at a time, as the parts are read, so that what
-// is held is about one part (a sheet, a slide, a Word document's body);
-// the bytes are those of the document read whole. Should reading stop
+// JSON is written as the parts are read, a block and a row at a time, so
+// that what is held is about the parts being read (a sheet, a slide, a
+// Word document's body) and never the document encoded; the bytes are
+// those of the document read whole. Should reading stop
 // partway through a file (an interrupt), what was written of it is cut
 // short and the command says so. Only the documents go to standard
 // output: everything said about them goes to standard error, and the exit

@@ -124,6 +124,19 @@ older and PowerPoint 95 and older are not read; neither is a file of
 another format under one of these names (RTF, HTML, a zip package). Each is
 refused with a message that says which it is.
 
+## Known limitations
+
+- **The text of earlier saves is not read.** A Word document saved with
+  "fast save" and a presentation saved several times can still hold, in
+  bytes the document as it stands no longer points to, text that was later
+  deleted or replaced. The library reads the document as its last save left
+  it and gives none of that text, and nothing in the output says whether a
+  file holds any. This was decided, not overlooked: it will be looked at
+  again if someone needs it.
+- What each format's entry above lists as "Not read". Where the library can
+  tell that a file holds such content it says so with
+  `input.unread_content` (see below).
+
 ## Warnings
 
 Every warning has one of the codes all go-fast libraries share (go-fast-core's

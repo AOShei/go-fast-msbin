@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin"
 	t "github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
 
@@ -92,7 +91,7 @@ func TestFormulas(tt *testing.T) {
 	if len(got) != len(want) {
 		tt.Errorf("%d formulas, want %d: %v", len(got), len(want), got)
 	}
-	if w, ok := warning(doc.Warnings, gofastmsbin.WarnUnreadContent); !ok || w.Message != "1 formulas not read back" {
+	if w, ok := warning(doc.Warnings, gofastcore.WarnInputUnreadContent); !ok || w.Message != "1 formulas not read back" {
 		tt.Errorf("%+v", doc.Warnings)
 	}
 	if w, ok := warning(doc.Warnings, gofastcore.WarnInputExternalReference); !ok || !strings.HasPrefix(w.Message, "1 link ") {
@@ -100,7 +99,7 @@ func TestFormulas(tt *testing.T) {
 	}
 	// Without Options.Cells no formula is read, and none is counted.
 	plain := mustExtract(tt, data, nil)
-	if _, ok := warning(plain.Warnings, gofastmsbin.WarnUnreadContent); ok || plain.Parts[0].Blocks[0].Table.Cells != nil {
+	if _, ok := warning(plain.Warnings, gofastcore.WarnInputUnreadContent); ok || plain.Parts[0].Blocks[0].Table.Cells != nil {
 		tt.Errorf("without Cells: %+v", plain.Warnings)
 	}
 

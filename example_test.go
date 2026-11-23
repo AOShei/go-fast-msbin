@@ -86,5 +86,5 @@ func ExampleExtract_password() {
 	// Output:
 	// gofastmsbin: Excel 97-2003 (BIFF8) file, encrypted (RC4): no password given: gofastcore: password required
 	// for your eyes only
-	// msbin.decrypted
+	// input.decrypted
 }

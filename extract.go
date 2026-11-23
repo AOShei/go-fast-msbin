@@ -11,7 +11,6 @@ import (
 	"github.com/AOShei/go-fast-msbin/internal/cfb"
 	"github.com/AOShei/go-fast-msbin/internal/clean"
 	"github.com/AOShei/go-fast-msbin/internal/detect"
-	"github.com/AOShei/go-fast-msbin/internal/warn"
 )
 
 // Defaults for the limits of gofastcore.Options.Limits, used where a limit
@@ -31,37 +30,34 @@ const (
 	DefaultMaxCells = 20_000_000
 )
 
-// Warning codes specific to this library. Each states a fact about the
-// file. The codes shared by all go-fast libraries are in gofastcore, and
-// this library raises these of them besides the ones about parts, limits
-// and embedded documents:
+// This library has no warning codes of its own: every warning has one of
+// the codes all go-fast libraries share, which are in gofastcore. Besides
+// the ones about parts, limits and embedded documents it raises:
 //
-//	input.active_content      the file contains a VBA project
-//	input.external_reference  an embedded object is a link to a file
-//	                          outside the document
-//	input.repaired            the compound file is damaged, and was read
-//	                          as far as it could be
-//	text.unmapped_glyphs      text in a code page that does not define
-//	                          some of its characters
-const (
-	// WarnPropertiesDamaged: a stream of document properties could not be
-	// read to its end; the properties read before the damage are kept.
-	WarnPropertiesDamaged = warn.PropertiesDamaged
-	// WarnControlCharsRemoved: control characters with no meaning as text
-	// were removed from extracted strings.
-	WarnControlCharsRemoved = warn.ControlCharsRemoved
-	// WarnUnreadContent: the document holds content of a kind this version
-	// does not read.
-	WarnUnreadContent = warn.UnreadContent
-	// WarnPartDamaged: a stream of the file other than its main one (a
-	// VBA project, an embedded object) could not be read to its end; what
-	// was read is used.
-	WarnPartDamaged = warn.PartDamaged
-	// WarnDecrypted: the file was encrypted and has been decrypted, with
-	// the password given or, for a workbook, with the password Excel
-	// uses when none is set. Info; the message names the scheme.
-	WarnDecrypted = "msbin.decrypted"
-)
+//	input.active_content             the file contains a VBA project, or
+//	                                 an action that runs a program
+//	input.external_reference         an embedded object is a link to a
+//	                                 file outside the document
+//	input.repaired                   the compound file or a stream of it
+//	                                 is damaged, and was read as far as it
+//	                                 could be
+//	input.stream_damaged             a stream other than the main one (the
+//	                                 properties, a VBA project, an
+//	                                 embedded object) could not be read to
+//	                                 its end; what was read is used
+//	input.unread_content             content of a kind that is not read
+//	input.decrypted                  the file was encrypted and has been
+//	                                 decrypted (Metadata.Encrypted is
+//	                                 set); the message names the scheme
+//	                                 and which password opened it
+//	text.unmapped_glyphs             characters Unicode or the code page
+//	                                 has nothing for
+//	text.control_characters_removed  control characters with no meaning
+//	                                 as text were removed
+//	text.tracked_changes             a Word document has tracked changes
+//	structure.heading_level_clamped  headings deeper than six levels
+//	table.region_split               areas of a sheet too thinly filled
+//	                                 to be tables are given as cells
 
 // Extractor extracts Word, Excel and PowerPoint files in the binary
 // formats of Office 97 to 2003. The zero value is ready to use and safe
@@ -113,7 +109,7 @@ func (e *Extractor) ExtractFile(ctx context.Context, path string, opts *gofastco
 //
 // An encrypted file is opened with Options.Password; a workbook
 // encrypted with the password Excel uses when none was set is opened
-// without one. The document then has the warning WarnDecrypted.
+// without one. The document then has the warning input.decrypted.
 //
 // An error wraps one of the gofastcore errors:
 //

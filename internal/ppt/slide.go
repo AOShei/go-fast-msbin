@@ -1010,7 +1010,7 @@ func (d *Deck) slide(ctx context.Context, index int) *unit.Result {
 		}
 	}
 	if s.removed > 0 {
-		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(s.removed))
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTextControlCharactersRemoved, strconv.Itoa(s.removed))
 	}
 	if s.unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.UnmappedEquation(s.unmapped))

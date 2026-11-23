@@ -127,7 +127,7 @@ func Summarize(tallies []*Tally, damaged []string) []gofastcore.Warning {
 			kinds = append(kinds, strconv.Itoa(n)+" "+kind)
 		}
 		sort.Strings(kinds)
-		out = append(out, gofastcore.Warning{Code: warn.UnreadContent, Severity: gofastcore.SeverityWarning, Message: strings.Join(kinds, ", ")})
+		out = append(out, gofastcore.Warning{Code: gofastcore.WarnInputUnreadContent, Severity: gofastcore.SeverityWarning, Message: strings.Join(kinds, ", ")})
 	}
 	sort.Strings(damaged)
 	var names warn.Names
@@ -135,7 +135,7 @@ func Summarize(tallies []*Tally, damaged []string) []gofastcore.Warning {
 		names.AddOnce(clean.Label(name))
 	}
 	if msg := names.Message(warn.DamagedOne, warn.DamagedMany); msg != "" {
-		out = append(out, gofastcore.Warning{Code: warn.PartDamaged, Severity: gofastcore.SeverityWarning, Message: msg})
+		out = append(out, gofastcore.Warning{Code: gofastcore.WarnInputStreamDamaged, Severity: gofastcore.SeverityWarning, Message: msg})
 	}
 	return out
 }

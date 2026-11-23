@@ -1,8 +1,6 @@
-// Package warn holds the warning codes this library raises beyond the ones
-// every go-fast library shares (those are in gofastcore), and what the
-// readers share in saying what a fixed bound left out. Each code states a
-// fact about the file. They are documented where the public package
-// declares them.
+// Package warn holds what the readers share in saying what a fixed bound
+// left out, and the messages of warnings several of them raise. The
+// codes are go-fast-core's: this library has none of its own.
 package warn
 
 import (
@@ -10,14 +8,6 @@ import (
 	"strconv"
 
 	"github.com/AOShei/go-fast-core"
-)
-
-const (
-	UnreadContent       = "msbin.unread_content"
-	ControlCharsRemoved = "msbin.control_characters_removed"
-	PropertiesDamaged   = "msbin.properties_damaged"
-	PartDamaged         = "msbin.part_damaged"
-	RegionSplit         = "msbin.region_split"
 )
 
 // ErrText is what a reader ends with when the document has taken all the

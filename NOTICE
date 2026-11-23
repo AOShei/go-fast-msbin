@@ -22,7 +22,7 @@ All of it is by the same author and under the same MIT License.
   testdata/numfmt
   internal/vba,               from go-fast-ooxml (v0.1.1), adapted: the VBA
   internal/warn,              reader takes a storage of the file; the bounds
-  internal/stored,            and warning codes are this library's; the stored
+  internal/stored,            are this library's, the warning codes core's; the stored
   internal/unit,              part holds macros only; file.go keeps ooxml's
   file.go, cmd/gofastmsbin    reading of parts in order and in parallel.
   internal/grid               from go-fast-ooxml (v0.1.1): the stage of

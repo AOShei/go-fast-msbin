@@ -75,7 +75,7 @@ func (f *File) malformedCrypt() error {
 // it, and with a warning that names the scheme and the password.
 func (f *File) decrypted(scheme, with string) {
 	f.meta.Encrypted = true
-	f.opened = append(f.opened, gofastcore.Warning{Code: WarnDecrypted, Severity: gofastcore.SeverityInfo,
+	f.opened = append(f.opened, gofastcore.Warning{Code: gofastcore.WarnInputDecrypted, Severity: gofastcore.SeverityInfo,
 		Message: fmt.Sprintf("encrypted (%s); decrypted with %s", scheme, with)})
 }
 
@@ -305,7 +305,7 @@ func (f *File) encryptedProperties(key *crypt.Key) {
 	}
 	meta, ws := metadata(has, open)
 	if damaged {
-		ws = append(ws, gofastcore.Warning{Code: WarnPropertiesDamaged, Severity: gofastcore.SeverityWarning, Message: summaryStream})
+		ws = append(ws, gofastcore.Warning{Code: gofastcore.WarnInputStreamDamaged, Severity: gofastcore.SeverityWarning, Message: propertyStream(summaryStream)})
 	}
 	f.meta = meta
 	f.opened = append(f.opened[:f.metaFrom:f.metaFrom], append(ws, f.opened[f.metaTo:]...)...)

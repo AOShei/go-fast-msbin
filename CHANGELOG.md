@@ -7,8 +7,10 @@ minor version may change the API.
 
 ## [Unreleased]
 
-The first release, to be 0.1.0. Requires `go-fast-core` v0.1.1; the command
-also requires `go-fast-ooxml` v0.1.1. `IMPLEMENTATION_PLAN.md` has what each
+## [0.1.0] - 2026-11-23
+
+The first release. Requires `go-fast-core` v0.1.2; the command also requires
+`go-fast-ooxml` v0.1.1. `IMPLEMENTATION_PLAN.md` has what each
 phase of the work found and measured.
 
 ### Added
@@ -40,7 +42,7 @@ phase of the work found and measured.
 - **Encrypted files**, with `Options.Password`: XOR obfuscation, RC4 and RC4
   CryptoAPI. `ErrPasswordRequired`, `ErrWrongPassword`; the password Excel
   uses when none is set is tried unasked. A decrypted document has
-  `Metadata.Encrypted` set and the warning `msbin.decrypted`.
+  `Metadata.Encrypted` set and the warning `input.decrypted`.
 - **What a file declares of display**: `hidden` for a hidden sheet, row,
   column, slide or shape, hidden text, and a cell its format shows as
   nothing.
@@ -55,6 +57,13 @@ phase of the work found and measured.
 - **Limits**: `Options.Limits` (input, decoded bytes, text, depth) and
   `Extractor.MaxCells`; fixed bounds reported with `limit.exceeded`.
   `SECURITY.md` lists them.
+
+### Warnings
+
+- Every warning has a code of go-fast-core's; the library has none of its
+  own. Among them, from core v0.1.2: `input.stream_damaged`,
+  `input.unread_content`, `input.decrypted`,
+  `text.control_characters_removed` and `table.region_split`.
 
 ### Memory
 

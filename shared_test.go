@@ -110,7 +110,7 @@ func TestMetadata(t *testing.T) {
 	if len(m.Extra) != 14 {
 		t.Errorf("extra: %v", m.Extra)
 	}
-	if w, ok := warning(doc.Warnings, gofastmsbin.WarnControlCharsRemoved); !ok || w.Message != "1 in document properties" {
+	if w, ok := warning(doc.Warnings, gofastcore.WarnTextControlCharactersRemoved); !ok || w.Message != "1 in document properties" {
 		t.Errorf("warnings: %+v", doc.Warnings)
 	}
 	if doc.Source.Format != "doc" || doc.Source.MIME != "application/msword" {
@@ -149,7 +149,7 @@ func TestMetadataDamaged(t *testing.T) {
 	good := msbintest.PropertyStream(msbintest.Section{Format: msbintest.FmtSummary, CodePage: 1252, Props: []msbintest.Prop{
 		{ID: 2, Value: "The title"}, {ID: 4, Value: "The author"}}})
 	doc := mustExtract(t, msbintest.Compound(with(wordFile(), map[string][]byte{"\x05SummaryInformation": good[:len(good)-6]})), nil)
-	if w, ok := warning(doc.Warnings, gofastmsbin.WarnPropertiesDamaged); !ok || w.Message != "SummaryInformation" || doc.Metadata.Title != "The title" {
+	if w, ok := warning(doc.Warnings, gofastcore.WarnInputStreamDamaged); !ok || w.Message != "the property stream SummaryInformation" || doc.Metadata.Title != "The title" {
 		t.Errorf("%+v, %+v", doc.Metadata, doc.Warnings)
 	}
 	// Every cut and every changed byte gives a valid document.
@@ -235,7 +235,7 @@ func TestMacros(t *testing.T) {
 	streams := with(wordFile(), msbintest.VBAStreams("Macros/", 1252, msbintest.VBAModule{Name: "M", Code: code}))
 	streams["Macros/VBA/dir"] = []byte{9, 9, 9}
 	doc := mustExtract(t, msbintest.Compound(streams), nil)
-	if w, ok := warning(doc.Warnings, gofastmsbin.WarnPartDamaged); !ok || w.Message != "1 stream could not be read to its end (Macros/VBA)" {
+	if w, ok := warning(doc.Warnings, gofastcore.WarnInputStreamDamaged); !ok || w.Message != "1 stream could not be read to its end (Macros/VBA)" {
 		t.Errorf("%+v", doc.Warnings)
 	}
 }

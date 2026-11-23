@@ -50,13 +50,13 @@ func metadata(has func(name string) bool, open func(name string) (unit.Stream, e
 		label := strings.TrimPrefix(name, "\x05")
 		s, err := open(name)
 		if err != nil {
-			ws = append(ws, gofastcore.Warning{Code: WarnPropertiesDamaged, Severity: gofastcore.SeverityWarning, Message: label})
+			ws = append(ws, gofastcore.Warning{Code: gofastcore.WarnInputStreamDamaged, Severity: gofastcore.SeverityWarning, Message: propertyStream(label)})
 			continue
 		}
 		data, cut, err := unit.ReadAll(s, oleps.MaxStream)
 		res := oleps.Read(data)
 		if res.Damaged || cut || err != nil {
-			ws = append(ws, gofastcore.Warning{Code: WarnPropertiesDamaged, Severity: gofastcore.SeverityWarning, Message: label})
+			ws = append(ws, gofastcore.Warning{Code: gofastcore.WarnInputStreamDamaged, Severity: gofastcore.SeverityWarning, Message: propertyStream(label)})
 		}
 		undecoded += res.Undecoded
 		lost.AddCut(warn.CapPropertyValue, res.ValuesCut, res.ValueBytes)
@@ -148,8 +148,12 @@ func metadata(has func(name string) bool, open func(name string) (unit.Stream, e
 			Message: fmt.Sprintf("%d characters of the document properties, in a code page that does not define them or is not known here, are U+FFFD", undecoded)})
 	}
 	if removed > 0 {
-		ws = append(ws, gofastcore.Warning{Code: WarnControlCharsRemoved, Severity: gofastcore.SeverityInfo,
+		ws = append(ws, gofastcore.Warning{Code: gofastcore.WarnTextControlCharactersRemoved, Severity: gofastcore.SeverityInfo,
 			Message: fmt.Sprintf("%d in document properties", removed)})
 	}
 	return m, ws
 }
+
+// propertyStream is the message of input.stream_damaged for a stream of
+// the document's properties that could not be read to its end.
+func propertyStream(name string) string { return "the property stream " + name }

@@ -5,7 +5,7 @@ Extracts the binary Office formats (Word `.doc`, Excel `.xls` and PowerPoint
 model, [`gofastcore.Document`](https://github.com/AOShei/go-fast-core).
 Standard library and go-fast modules only.
 
-**Status: complete for a first release (0.1.0), not yet tagged.** The three
+**Status: v0.1.0, the first release.** The three
 formats are read, encrypted files with their password.
 [`SECURITY.md`](SECURITY.md) says what a hostile file cannot do and lists the
 limits; [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) has what each phase
@@ -99,7 +99,7 @@ What is read:
   encrypted with the password Excel uses when none was set (a protected
   workbook with no password to open it) is read without being given one. The
   document's `Metadata.Encrypted` is set, whoever's password opened the
-  file, and it has the warning `msbin.decrypted`, which names the scheme and
+  file, and it has the warning `input.decrypted`, which names the scheme and
   says which password that was. These
   schemes are weak: they are read because files kept in them exist. Each
   is checked against files other programs wrote, but for the XOR obfuscation
@@ -118,6 +118,26 @@ compound files, told apart by the streams they hold. Excel 2 to 4, Word 2 and
 older and PowerPoint 95 and older are not read; neither is a file of
 another format under one of these names (RTF, HTML, a zip package). Each is
 refused with a message that says which it is.
+
+## Warnings
+
+Every warning has one of the codes all go-fast libraries share (go-fast-core's
+README, "Warnings"); this library has none of its own. Besides the ones about
+parts, limits and embedded documents it raises:
+
+| Code | Here |
+|---|---|
+| `input.repaired` | The compound file, or a stream of it, is damaged and was read as far as it could be; a presentation's chain of edits was found by search |
+| `input.stream_damaged` | A stream other than the main one could not be read to its end, and what was read of it is used: the properties (the message names the stream), a VBA project, an embedded object, a chart |
+| `input.unread_content` | Content of a kind that is not read; the message says what and how many |
+| `input.decrypted` | The file was encrypted and has been decrypted; `Metadata.Encrypted` is set. The message names the scheme and which password opened it |
+| `input.active_content` | A VBA project, macro sheets, or an action that starts a program; nothing is run |
+| `input.external_reference` | A linked object or file; nothing is fetched |
+| `text.unmapped_glyphs` | Characters that Unicode, the code page or a symbol font has nothing for |
+| `text.control_characters_removed` | Control characters with no meaning as text were removed; the message says how many |
+| `text.tracked_changes` | A Word document has tracked changes |
+| `structure.heading_level_clamped` | Headings deeper than six levels |
+| `table.region_split` | Areas of a sheet too thinly filled to be tables are given as cells |
 
 ## Using it
 

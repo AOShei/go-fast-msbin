@@ -29,7 +29,7 @@ Any of the following is a bug to report, whatever the file:
 | **Crash the caller** | No panic on any input: every offset, length and count taken from a file is checked, every chain of sectors, edits and records is followed with a bound, and every list a file can lengthen has one |
 | **Write what it likes into the output** | Text is valid UTF-8 with control characters removed. Names taken from the file (sheets, authors, fonts, error messages) are cleaned and cut to a length before they appear in a warning or a field |
 | **Lose what it declares about display** | A sheet, row, column, slide, shape or text the file declares hidden, in the ways the README lists, keeps that reason. Nothing is judged from appearance, so content can be out of sight with no reason; see below |
-| **Be read past its damage unnoticed** | A compound file with a wrong byte-order mark or a broken chain, a stream that breaks off, a presentation whose Current User stream leads nowhere: each is read as far as it is sound, and says so (`input.repaired`, `msbin.part_damaged`) |
+| **Be read past its damage unnoticed** | A compound file with a wrong byte-order mark or a broken chain, a stream that breaks off, a presentation whose Current User stream leads nowhere: each is read as far as it is sound, and says so (`input.repaired`, `input.stream_damaged`) |
 
 ## Limits
 
@@ -48,7 +48,7 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Sheets of a workbook; slides of a presentation | 65,536 each | fixed | Those past it are not read, and said |
 | Shapes of a slide | 16,384 | fixed | Those past it are not read, and said |
 | Cells of one table of a Word document | 4 million | fixed | The table is cut there, and said |
-| A formula turned back into text | 32 KiB | fixed | The formula is not read back, and counted in `msbin.unread_content` |
+| A formula turned back into text | 32 KiB | fixed | The formula is not read back, and counted in `input.unread_content` |
 | Points of a chart; of all the charts of a sheet together | 1 million; 2 million | fixed | Cut there, and said |
 | Embedded objects | 4,096, to a depth of 64 storages | fixed | Those past it are not listed, and said |
 | VBA projects; modules of a project | 16; 4,096 | fixed | Those past it are not read, and said |

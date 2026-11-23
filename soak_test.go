@@ -67,7 +67,7 @@ func TestSoak(t *testing.T) {
 			// The properties say a file was encrypted when it was, and
 			// only then. No password is given here: what opens is what
 			// Excel encrypted with its own.
-			_, opened := warning(one.Warnings, gofastmsbin.WarnDecrypted)
+			_, opened := warning(one.Warnings, gofastcore.WarnInputDecrypted)
 			if one.Metadata.Encrypted != opened {
 				t.Errorf("file %d: encrypted %v in its properties, decrypted %v", i, one.Metadata.Encrypted, opened)
 			}

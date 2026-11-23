@@ -33,6 +33,9 @@ func opens(tt *testing.T, what string, data []byte, password, scheme string) *go
 	if w, ok := warning(doc.Warnings, gofastmsbin.WarnDecrypted); !ok || w.Message != "encrypted ("+scheme+"); decrypted with the password given" {
 		tt.Errorf("%s: warnings %+v", what, doc.Warnings)
 	}
+	if !doc.Metadata.Encrypted {
+		tt.Errorf("%s: the properties do not say the file was encrypted", what)
+	}
 	return doc
 }
 
@@ -62,7 +65,7 @@ func TestEncryptedWorkbooks(tt *testing.T) {
 		if err != nil {
 			tt.Fatalf("%s, Excel's password: %v", name, err)
 		}
-		if w, _ := warning(doc.Warnings, gofastmsbin.WarnDecrypted); !strings.HasSuffix(w.Message, "the password Excel uses when none is set") || len(doc.Parts) != 2 {
+		if w, _ := warning(doc.Warnings, gofastmsbin.WarnDecrypted); !strings.HasSuffix(w.Message, "the password Excel uses when none is set") || len(doc.Parts) != 2 || !doc.Metadata.Encrypted {
 			tt.Errorf("%s, Excel's password: %+v", name, doc.Warnings)
 		}
 	}
@@ -141,8 +144,8 @@ func TestEncryptedCorpus(tt *testing.T) {
 			continue
 		}
 		read++
-		if w, _ := warning(doc.Warnings, gofastmsbin.WarnDecrypted); !strings.HasPrefix(w.Message, "encrypted ("+want[1]+")") {
-			tt.Errorf("%s: %+v", name, doc.Warnings)
+		if w, _ := warning(doc.Warnings, gofastmsbin.WarnDecrypted); !strings.HasPrefix(w.Message, "encrypted ("+want[1]+")") || !doc.Metadata.Encrypted {
+			tt.Errorf("%s: encrypted %v, %+v", name, doc.Metadata.Encrypted, doc.Warnings)
 		}
 		var text strings.Builder
 		pictures := 0

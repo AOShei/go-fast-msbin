@@ -66,8 +66,11 @@ func (f *File) malformedCrypt() error {
 	return fmt.Errorf("gofastmsbin: %s file, encrypted: what it says of its encryption cannot be read: %w", f.info.Version, gofastcore.ErrUnsupported)
 }
 
-// decrypted notes that the file was encrypted and has been decrypted.
+// decrypted notes that the file was encrypted and has been decrypted: in
+// its properties, which say what the file was whoever's password opened
+// it, and with a warning that names the scheme and the password.
 func (f *File) decrypted(scheme, with string) {
+	f.meta.Encrypted = true
 	f.opened = append(f.opened, gofastcore.Warning{Code: WarnDecrypted, Severity: gofastcore.SeverityInfo,
 		Message: fmt.Sprintf("encrypted (%s); decrypted with %s", scheme, with)})
 }

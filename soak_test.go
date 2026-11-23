@@ -43,7 +43,7 @@ func TestSoak(t *testing.T) {
 		return e.Extract(ctx, bytes.NewReader(data), int64(len(data)), &o)
 	}
 	const textLimit = 4096
-	var files, documents, cut int
+	var files, documents, cut, encrypted int
 	var slowest time.Duration
 	var peak uint64
 	var stats runtime.MemStats
@@ -64,6 +64,16 @@ func TestSoak(t *testing.T) {
 		}
 		if err1 == nil {
 			documents++
+			// The properties say a file was encrypted when it was, and
+			// only then. No password is given here: what opens is what
+			// Excel encrypted with its own.
+			_, opened := warning(one.Warnings, gofastmsbin.WarnDecrypted)
+			if one.Metadata.Encrypted != opened {
+				t.Errorf("file %d: encrypted %v in its properties, decrypted %v", i, one.Metadata.Encrypted, opened)
+			}
+			if opened {
+				encrypted++
+			}
 			a, _ := json.Marshal(one)
 			b, _ := json.Marshal(eight)
 			if !bytes.Equal(a, b) {
@@ -98,8 +108,8 @@ func TestSoak(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d files, %d documents, each read four ways; %d cut by a limit of %d bytes of text; the slowest file took %v in all; the heap peaked at %d MiB",
-		files, documents, cut, textLimit, slowest.Round(time.Millisecond), peak>>20)
+	t.Logf("%d files, %d documents, each read four ways; %d encrypted with Excel's own password; %d cut by a limit of %d bytes of text; the slowest file took %v in all; the heap peaked at %d MiB",
+		files, documents, encrypted, cut, textLimit, slowest.Round(time.Millisecond), peak>>20)
 }
 
 // textOf counts the text of a document and of the documents embedded in

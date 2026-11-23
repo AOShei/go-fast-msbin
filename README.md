@@ -87,7 +87,9 @@ What is read:
   `ErrPasswordRequired`, with a wrong one `ErrWrongPassword`. A workbook
   encrypted with the password Excel uses when none was set (a protected
   workbook with no password to open it) is read without being given one. The
-  document has the warning `msbin.decrypted`, which names the scheme. These
+  document's `Metadata.Encrypted` is set, whoever's password opened the
+  file, and it has the warning `msbin.decrypted`, which names the scheme and
+  says which password that was. These
   schemes are weak: they are read because files kept in them exist. Not
   read: the properties of an encrypted presentation, which are encrypted in a
   stream of their own.

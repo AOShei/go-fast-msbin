@@ -369,7 +369,7 @@ func (d *Doc) Read(ctx context.Context, index int) *unit.Result {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.UnmappedEquation(r.unmappedEq))
 	}
 	if r.removed > 0 {
-		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(r.removed))
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTextControlCharactersRemoved, strconv.Itoa(r.removed))
 	}
 	hasText, hasImage := false, r.sawImage
 	for i := range part.Blocks {

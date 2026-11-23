@@ -36,7 +36,7 @@ func opens(tt *testing.T, what string, data []byte, password, scheme string) *go
 	if err := doc.Validate(); err != nil {
 		tt.Fatalf("%s: %v", what, err)
 	}
-	if w, ok := warning(doc.Warnings, gofastmsbin.WarnDecrypted); !ok || w.Message != "encrypted ("+scheme+"); decrypted with the password given" {
+	if w, ok := warning(doc.Warnings, gofastcore.WarnInputDecrypted); !ok || w.Message != "encrypted ("+scheme+"); decrypted with the password given" {
 		tt.Errorf("%s: warnings %+v", what, doc.Warnings)
 	}
 	if !doc.Metadata.Encrypted {
@@ -71,7 +71,7 @@ func TestEncryptedWorkbooks(tt *testing.T) {
 		if err != nil {
 			tt.Fatalf("%s, Excel's password: %v", name, err)
 		}
-		if w, _ := warning(doc.Warnings, gofastmsbin.WarnDecrypted); !strings.HasSuffix(w.Message, "the password Excel uses when none is set") || len(doc.Parts) != 2 || !doc.Metadata.Encrypted {
+		if w, _ := warning(doc.Warnings, gofastcore.WarnInputDecrypted); !strings.HasSuffix(w.Message, "the password Excel uses when none is set") || len(doc.Parts) != 2 || !doc.Metadata.Encrypted {
 			tt.Errorf("%s, Excel's password: %+v", name, doc.Warnings)
 		}
 	}
@@ -199,21 +199,21 @@ func TestEncryptedPresentation(tt *testing.T) {
 	if m := doc.Metadata; m.Title != "Kept from view" || len(m.Authors) != 1 || m.Authors[0] != "An author" || m.Extra["company"] != "A company" {
 		tt.Errorf("the properties: %+v", m)
 	}
-	if _, ok := warning(doc.Warnings, gofastmsbin.WarnPropertiesDamaged); ok {
+	if _, ok := warning(doc.Warnings, gofastcore.WarnInputStreamDamaged); ok {
 		tt.Errorf("warnings: %+v", doc.Warnings)
 	}
 	// A list of the sets that breaks off: what can be read, and a warning.
 	whole := streams["EncryptedSummary"]
 	streams["EncryptedSummary"] = whole[:len(whole)-30]
 	doc = opens(tt, "presentation with a damaged list", t.Compound(streams), "hello", "RC4 CryptoAPI")
-	if w, ok := warning(doc.Warnings, gofastmsbin.WarnPropertiesDamaged); !ok || w.Message != "EncryptedSummary" || doc.Metadata.Title != "" && doc.Metadata.Title != "Kept from view" {
+	if w, ok := warning(doc.Warnings, gofastcore.WarnInputStreamDamaged); !ok || w.Message != "the property stream EncryptedSummary" || doc.Metadata.Title != "" && doc.Metadata.Title != "Kept from view" {
 		tt.Errorf("a damaged list: %+v, %+v", doc.Metadata, doc.Warnings)
 	}
 	// One that points outside the stream, or is noise: no more than that.
 	for _, n := range []int{0, 5, 8, 40} {
 		streams["EncryptedSummary"] = append([]byte(nil), whole[:n]...)
 		doc = opens(tt, "presentation with a cut stream", t.Compound(streams), "hello", "RC4 CryptoAPI")
-		if _, ok := warning(doc.Warnings, gofastmsbin.WarnPropertiesDamaged); !ok {
+		if _, ok := warning(doc.Warnings, gofastcore.WarnInputStreamDamaged); !ok {
 			tt.Errorf("a stream of %d bytes: %+v", n, doc.Warnings)
 		}
 	}
@@ -255,7 +255,7 @@ func TestEncryptedCorpus(tt *testing.T) {
 			continue
 		}
 		read++
-		if w, _ := warning(doc.Warnings, gofastmsbin.WarnDecrypted); !strings.HasPrefix(w.Message, "encrypted ("+want[1]+")") || !doc.Metadata.Encrypted {
+		if w, _ := warning(doc.Warnings, gofastcore.WarnInputDecrypted); !strings.HasPrefix(w.Message, "encrypted ("+want[1]+")") || !doc.Metadata.Encrypted {
 			tt.Errorf("%s: encrypted %v, %+v", name, doc.Metadata.Encrypted, doc.Warnings)
 		}
 		var text strings.Builder

@@ -826,10 +826,10 @@ func (sh *sheet) finish() {
 		}
 	}
 	if sh.g.Split > 0 {
-		part.Warn(gofastcore.SeverityInfo, warn.RegionSplit, strconv.Itoa(sh.g.Split)+" areas too thinly filled to be tables were written a row at a time")
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTableRegionSplit, strconv.Itoa(sh.g.Split)+" areas too thinly filled to be tables were written a row at a time")
 	}
 	if sh.removed > 0 {
-		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(sh.removed))
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTextControlCharactersRemoved, strconv.Itoa(sh.removed))
 	}
 	if sh.unmapped > 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(sh.unmapped))

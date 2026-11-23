@@ -632,7 +632,7 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 			Message: undecodedMessage(b.undecoded, b.cp)})
 	}
 	if b.removed > 0 {
-		out = append(out, gofastcore.Warning{Code: warn.ControlCharsRemoved, Severity: gofastcore.SeverityInfo,
+		out = append(out, gofastcore.Warning{Code: gofastcore.WarnTextControlCharactersRemoved, Severity: gofastcore.SeverityInfo,
 			Message: strconv.Itoa(b.removed) + " in shared strings and sheet names"})
 	}
 	return out

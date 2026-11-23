@@ -5,13 +5,6 @@ const (
 	DefaultMaxDecodedBytes	= 2 << 30
 	DefaultMaxCells	= 20_000_000
 )
-const (
-	WarnPropertiesDamaged	= warn.PropertiesDamaged
-	WarnControlCharsRemoved	= warn.ControlCharsRemoved
-	WarnUnreadContent	= warn.UnreadContent
-	WarnPartDamaged	= warn.PartDamaged
-	WarnDecrypted	= "msbin.decrypted"
-)
 func Extract(ctx context.Context, r io.ReaderAt, size int64, opts *gofastcore.Options) (*gofastcore.Document, error)
 func ExtractFile(ctx context.Context, path string, opts *gofastcore.Options) (*gofastcore.Document, error)
 

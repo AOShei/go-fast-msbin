@@ -308,7 +308,7 @@ func (d *Doc6) Read(ctx context.Context, index int) *unit.Result {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, strconv.Itoa(r.undecoded)+" characters in code page "+strconv.Itoa(d.cp)+", which it does not define or which is not known here, are U+FFFD")
 	}
 	if r.removed > 0 {
-		part.Warn(gofastcore.SeverityInfo, warn.ControlCharsRemoved, strconv.Itoa(r.removed))
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTextControlCharactersRemoved, strconv.Itoa(r.removed))
 	}
 	if len(part.Blocks) == 0 && !part.Has(gofastcore.WarnPartFailed) {
 		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnPartNoText, "")

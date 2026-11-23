@@ -41,6 +41,8 @@ minor version may change the API.
   (`3.3E-321`, which was `3.30035851421953E-321`).
 - A duration that rounds to nothing has no minus sign: `[h]:mm:ss` of
   -1e-12 is `0:00:00`, which was `-0:00:00`.
+- Requires `go-fast-core` v0.1.4 (was v0.1.2): `Document.Text` and
+  `Document.Markdown` allocate their result once. The output is the same.
 - The command requires `go-fast-ooxml` v0.3.0 (was v0.2.0), which reads a
   long run of code paragraphs in an embedded `.docx` in linear time.
 

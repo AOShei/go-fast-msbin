@@ -191,7 +191,8 @@ func errorText(code byte) string {
 func (b *Book) sheet(ctx context.Context, index int) *sheet {
 	ref := b.refs[index]
 	sh := &sheet{b: b, ctx: ctx, unread: map[string]int{}, rowAt: -1, last: pos{-1, -1}, index: ref.place}
-	sh.c.data, sh.c.cp = b.data, b.cp
+	sh.c.cp = b.cp
+	start := b.at(&sh.c, ref.pos)
 	sh.room = gofastcore.TextBudgetFrom(ctx)
 	sh.g.Room = sh.room
 	part := &sh.part
@@ -203,23 +204,23 @@ func (b *Book) sheet(ctx context.Context, index int) *sheet {
 	case dtChart:
 		// A sheet that is a chart: its blocks have no place on a sheet
 		// of cells.
-		if typ, ok := sh.c.record(ref.pos); !ok || typ != recBOF {
+		if typ, ok := sh.c.record(start); !ok || typ != recBOF {
 			sh.notSheet = true
 		} else {
-			sh.c.record(ref.pos)
+			sh.c.record(start)
 			sh.chartBlocks(sh.readChart(), 0, 0, false, false)
 		}
 	default:
 		sh.macros = ref.kind == dtMacro
 		// The sheet's records end where those of the next begin.
-		end := len(b.data)
+		end := b.size
 		for _, other := range b.refs {
 			if other.pos > ref.pos && other.pos < end {
 				end = other.pos
 			}
 		}
 		sh.size = max(end-ref.pos, 0)
-		sh.read(ref.pos)
+		sh.read(start)
 	}
 	if sh.notSheet {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, "the workbook lists the sheet but does not contain it")

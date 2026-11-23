@@ -177,10 +177,11 @@ func (sh *sheet) sharedAfter(row, col int32) (string, int) {
 	w := sh.waiting
 	sh.waiting = nil
 	c := &sh.c
-	if w == nil || c.next+4 > len(c.data) {
+	following, ok := c.peek()
+	if w == nil || !ok {
 		return "", formulaUnread
 	}
-	switch le.Uint16(c.data[c.next:]) {
+	switch following {
 	case recShrFmla:
 		c.record(c.next)
 		b := c.b

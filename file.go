@@ -62,6 +62,7 @@ type File struct {
 	pictures    []byte               // and its stream of pictures
 	currentEdit uint32               // where the presentation's last edit is
 	book        []byte               // a workbook's stream of records
+	bookStream  unit.Stream          // or the stream itself, where it is read a sheet at a time
 	word        []byte               // a Word document's main stream
 	wordTable   []byte               // and its table stream
 	parts       int
@@ -266,9 +267,12 @@ func (f *File) reader() (*session, error) {
 			Stored: func(ctx context.Context, part *stored.Part) { stored.Macros(ctx, f.cf, f.projects, part) }}
 		return &session{src: ppt.Open(f.deck, &f.opts, cfg)}, nil
 	}
-	if f.book != nil {
+	if f.book != nil || f.bookStream != nil {
 		cfg := xls.Config{MaxCells: gofastcore.ResolveLimit(f.e.MaxCells, DefaultMaxCells), HasStored: len(f.projects) > 0,
 			Stored: func(ctx context.Context, part *stored.Part) { stored.Macros(ctx, f.cf, f.projects, part) }}
+		if f.bookStream != nil {
+			return &session{src: xls.OpenStream(f.bookStream, f.bookStream.Size(), &f.opts, cfg)}, nil
+		}
 		return &session{src: xls.Open(f.book, &f.opts, cfg)}, nil
 	}
 	// Every format that is opened has loaded its stream by now.
@@ -342,6 +346,10 @@ func equationIn(cf *cfb.File, path ...string) (text string, unmapped int, ok boo
 	}
 	return mtef.Linear(b)
 }
+
+// wholeBooks has every workbook's stream held in memory, as an encrypted
+// one's is. The tests set it, to compare the two ways of reading.
+var wholeBooks = false
 
 // load reads into memory the stream the reader of the file's format
 // reads whole: a workbook's records. The stream is no larger than the
@@ -441,6 +449,13 @@ func (f *File) load() error {
 	s, err := f.stream(name)
 	if err != nil {
 		return fmt.Errorf("gofastmsbin: the workbook's stream cannot be read: %s: %w", clean.Label(err.Error()), gofastcore.ErrMalformed)
+	}
+	// A workbook that is not encrypted, and whose stream can be read
+	// throughout, is not held in memory: each sheet reads its own
+	// records of it.
+	if whole, ok := s.(interface{ Whole() bool }); ok && f.info.Encryption == "" && !wholeBooks && whole.Whole() {
+		f.bookStream = s
+		return nil
 	}
 	data, _, err := unit.ReadAll(s, s.Size())
 	if err != nil && len(data) == 0 {

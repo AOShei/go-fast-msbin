@@ -3,6 +3,8 @@ package xls
 import (
 	"bytes"
 	"context"
+	"io"
+	"math"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -67,7 +69,12 @@ var plainStyle = cellStyle{format: numfmt.General(), general: true}
 // sheets share (the list of them, the cell formats, the shared strings)
 // is read when it is opened, and does not change after.
 type Book struct {
+	// The workbook's stream: held whole in data, or read from src a part
+	// at a time, each sheet its own records. size is its length.
 	data     []byte
+	src      io.ReaderAt
+	size     int
+	listed   bool // the sheets are known: what they share has been read
 	opts     *gofastcore.Options
 	cfg      Config
 	date1904 bool
@@ -116,10 +123,71 @@ type Book struct {
 // Summary, and a workbook that lists no sheets has one part that says
 // so.
 func Open(data []byte, opts *gofastcore.Options, cfg Config) *Book {
-	b := &Book{data: data, opts: opts, cfg: cfg}
+	b := &Book{data: data, size: len(data), opts: opts, cfg: cfg}
 	b.globals()
 	b.cells.Store(cfg.MaxCells)
 	return b
+}
+
+// OpenStream is Open for a workbook stream that is not held in memory:
+// size bytes of src, which must be readable throughout and from several
+// goroutines at once. What the sheets share is read now; each sheet's
+// records are read when the sheet is, and let go after. The document is
+// the same as with Open.
+func OpenStream(src io.ReaderAt, size int64, opts *gofastcore.Options, cfg Config) *Book {
+	b := &Book{src: src, size: int(min(size, math.MaxInt32)), opts: opts, cfg: cfg}
+	b.globals()
+	b.cells.Store(cfg.MaxCells)
+	return b
+}
+
+// The parts of a stream that is not held whole: the first of what the
+// sheets share, and how much more is read at a time where records run on
+// past what was read.
+const (
+	firstChunk = 256 << 10
+	maxChunk   = 8 << 20
+)
+
+// at puts a cursor on the stream for the records that begin at pos, and
+// returns where they begin in the cursor's data. A stream held whole is
+// the data. Of one that is not, the data is the records from pos to
+// where the next sheet's begin, or the first of the stream where the
+// sheets are not yet known; it grows if the records run on, so that what
+// is read is what would be read of the whole stream.
+func (b *Book) at(c *cursor, pos int) int {
+	if b.src == nil {
+		c.data = b.data
+		return pos
+	}
+	c.data = nil
+	if pos < 0 || pos >= b.size {
+		return 0
+	}
+	end := b.size
+	if !b.listed {
+		end = min(pos+firstChunk, b.size)
+	}
+	for _, other := range b.refs {
+		if other.pos > pos && other.pos < end {
+			end = other.pos
+		}
+	}
+	read := func(have []byte, n int) []byte {
+		from := pos + len(have)
+		n = min(n, b.size-from)
+		if n <= 0 {
+			return have
+		}
+		have = append(have, make([]byte, n)...)
+		got, _ := b.src.ReadAt(have[len(have)-n:], int64(from))
+		return have[:len(have)-n+max(got, 0)]
+	}
+	c.data = read(make([]byte, 0, end-pos), end-pos)
+	c.more = func(have []byte) []byte {
+		return read(have, min(max(len(have), firstChunk), maxChunk))
+	}
+	return 0
 }
 
 // fontRun says that from the byte at of a string its text is in the
@@ -135,14 +203,16 @@ type xf struct{ font, format uint16 }
 // globals reads the first substream of the workbook: from its BOF record
 // to its EOF.
 func (b *Book) globals() {
-	c := cursor{data: b.data}
+	defer func() { b.listed = true }()
+	var c cursor
+	start := b.at(&c, 0)
 	var fonts []symbol.Font
 	var xfs []xf
 	codes := map[int]string{}
 	var scratch []byte
 	var links linkReader
 	var group []byte // the records of the drawing group
-	at := 0
+	at := start
 	typ, ok := c.record(at)
 	if !ok || typ != recBOF {
 		b.damaged = append(b.damaged, "Workbook")
@@ -261,8 +331,8 @@ func (b *Book) globals() {
 			// records of its own kind and in CONTINUE records.
 			if b.opts == nil || b.opts.Images != gofastcore.ImagesNone {
 				group = append(group, body...)
-				for c.next+4 <= len(b.data) {
-					if t := le.Uint16(b.data[c.next:]); t != recContinue && t != recMsoDrawingGroup {
+				for {
+					if t, ok := c.peek(); !ok || t != recContinue && t != recMsoDrawingGroup {
 						break
 					}
 					c.record(c.next)
@@ -305,7 +375,7 @@ func (b *Book) globals() {
 	b.codes = codes
 	// The records of a sheet end where those of the next begin.
 	for i := range b.places {
-		end := len(b.data)
+		end := b.size
 		for _, other := range b.places {
 			if other.pos > b.places[i].pos && other.pos < end {
 				end = other.pos
@@ -338,10 +408,10 @@ func (b *Book) strings(c *cursor) {
 	}
 	// Each string takes three bytes at least, so the stream bounds how
 	// many there can be whatever the record says.
-	unique := min(int64(le.Uint32(c.b[4:])), int64(len(b.data)/3))
+	unique := min(int64(le.Uint32(c.b[4:])), int64(b.size/3))
 	c.b = c.b[8:]
 	var all strings.Builder
-	all.Grow(min(len(b.data)-c.next, 1<<20))
+	all.Grow(min(b.size-c.next, 1<<20))
 	ends := make([]uint32, 0, min(unique, 1<<16))
 	var raw, tmp []byte
 	// The fonts of a string's runs matter where one of them is a symbol

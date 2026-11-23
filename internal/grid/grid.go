@@ -257,8 +257,11 @@ func (b *builder) cut(g group, out []group) (pieces []group, changed bool) {
 		}
 		width := int(hi - lo + 1)
 		if cap(b.occ) < width {
-			b.occ = make([]bool, MaxCols)
-			b.ids = make([]int32, MaxCols)
+			// Room for this band and, doubling, for wider ones: all the
+			// columns a sheet can have are seldom needed.
+			room := min(max(2*width, 64), MaxCols)
+			b.occ = make([]bool, room)
+			b.ids = make([]int32, room)
 		}
 		occ, ids := b.occ[:width], b.ids[:width]
 		clear(occ)
@@ -333,6 +336,9 @@ func (b *builder) table(g group, at *Rect, headerRows int, name, role string) bo
 		perBlock = max(maxTableCells/cols, 1)
 	}
 	next := 0 // the next cell of g to place
+	// Most sheets have no cell with an entry of its own, and asking for
+	// each cell's costs more than placing it.
+	detailed := b.sh.Details != nil
 	for top := int64(0); top < rows; top += perBlock {
 		height := min(perBlock, rows-top)
 		// What the block takes from the text budget: BlockCost, then row
@@ -347,10 +353,12 @@ func (b *builder) table(g group, at *Rect, headerRows int, name, role string) bo
 				cost := gofastcore.CellCost * cols
 				for ; j < n && cells[g.index(j)].Row <= row; j++ {
 					if c := &cells[g.index(j)]; c.Row == row && c.Col >= r.C0 && c.Col <= r.C1 {
-						n, ok := b.sh.detailBytes(c)
-						cost += int64(len(c.Text)) + n
-						if ok {
-							details++
+						cost += int64(len(c.Text))
+						if detailed {
+							if n, ok := b.sh.detailBytes(c); ok {
+								cost += n
+								details++
+							}
 						}
 					}
 				}
@@ -394,8 +402,10 @@ func (b *builder) table(g group, at *Rect, headerRows int, name, role string) bo
 				continue
 			}
 			t.Rows[c.Row-part.R0][c.Col-part.C0] = c.Text
-			if d, ok := b.sh.cellDetail(c, int(c.Row-part.R0), int(c.Col-part.C0)); ok {
-				t.Cells = append(t.Cells, d)
+			if detailed {
+				if d, ok := b.sh.cellDetail(c, int(c.Row-part.R0), int(c.Col-part.C0)); ok {
+					t.Cells = append(t.Cells, d)
+				}
 			}
 			if b.owner != nil {
 				b.owner[i] = id

@@ -611,8 +611,9 @@ func (f *File) hand(ctx context.Context, limited bool) ([]*gofastcore.Document, 
 		res.Limited = res.Limited || limited
 		for _, o := range objects {
 			name, mime := "object"+strconv.FormatUint(uint64(o.ID), 10), "application/x-ole-storage"
-			// What it is, from the streams it holds. An object that is
-			// only listed is expanded no further than that takes.
+			// What it is, from the streams its directory names. An object
+			// that is only listed is expanded no further than finding
+			// its directory takes.
 			var content io.ReaderAt
 			switch {
 			case o.Data != nil:
@@ -621,7 +622,7 @@ func (f *File) hand(ctx context.Context, limited bool) ([]*gofastcore.Document, 
 				content = o.Peek
 			}
 			if content != nil {
-				if cf, err := cfb.Open(content, o.Size); err == nil {
+				if cf, err := cfb.OpenDirectory(content, o.Size); err == nil {
 					if in := detect.Compound(cf); in.Format != "" {
 						name, mime = name+"."+in.Format, detect.MIME(in.Format)
 					}

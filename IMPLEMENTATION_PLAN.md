@@ -540,7 +540,22 @@ What is left, by the profile of the workbooks: placing cells into tables (23%, b
 
 **Content that is not read, said** (2026-11-23, Andrew's decision after the sweep found it): only dialog sheets and formulas not read back raised `input.unread_content`, though the README listed more as not read. Now counted too: the sounds a presentation keeps (the records of its sound collection) and the videos and sounds it plays from outside (the movie and linked-audio records of its object list), the text boxes of an Excel 5/95 workbook (objects of kind 6), and the drop-down lists of a Word form (`FORMDROPDOWN` fields, in any story). In the corpus: sounds in 26 presentations, videos in 7, form drop-downs in 9 Word documents, Excel 5/95 text boxes in 1 workbook. Not counted: a pivot cache whose source is gone, form drop-downs in Word 6/95 documents, and the animation of slides, which is not content.
 
-**To release:** merge the open pull requests in order; date the changelog (`[0.1.0] - <date>`) in a pull request of its own; tag `v0.1.0` on `main`. The tag is Andrew's.
+**A second round of speed** (2026-11-23, after Andrew asked for what the profile above left). Measured on the same machine, before and after, two runs each; the documents are byte for byte the same for every file of the corpus, through the command with `-cells` and through the library with objects only listed.
+
+- **Workbooks.** Placing a cell in its table asked for the cell's entry (formula, type, link) twice, through an interface that returns the whole entry, whether or not the sheet has any entry at all; most have none. It is asked only of sheets that have one. This was most of the 23% the profile gave to placing cells. The digits of a fraction's numerator and denominator were made for every number, and are made for fraction formats; the scratch room of the cutter is as wide as the band it cuts, not as a sheet can be.
+- **Presentations.** An object was opened whole to say what it is: all of its allocation table, its directory, its short streams. `cfb.OpenDirectory` reads the header, the directory, and of the table the sectors the directory's chain goes through (`TestDirectoryAlone`; the fuzz target holds it to `Open`: what opens whole opens this way and names the same). The object is expanded as far as its directory lies, which in the files of the corpus is often near the end: expanding is still 41% of the time of a batch. Handed on or listed, an object is named the same way, so one damaged outside its directory now has its format in its name; no file of the corpus changes.
+- **Tried and dropped**: making room for fewer cells at first and leaving the rest to the estimate from what has been read (more allocated, 2.70 GB against 2.62, and no faster).
+- **Word documents**: the profile is flat (the largest function 11%), and nothing was changed.
+
+| Batch | All workers | One worker | Allocated |
+|---|---|---|---|
+| `.xls` | 0.77 s (was 0.88) | 0.92 to 0.93 s (was 1.09 to 1.10) | 2.72 GB (was 2.96) |
+| `.doc` | 0.18 s (as it was) | | 0.42 GB |
+| `.ppt` | 0.28 s (was 0.31 to 0.32) | 0.33 to 0.34 s (was 0.36 to 0.37) | 0.79 GB (was 0.83) |
+
+The large files are as they were. What is left in workbooks, by the profile: number formats (26%, of which finding a number's digits is over a third) and clearing and copying memory (17%: the list of cells, a sheet's records, the tables). Counting a sheet's cells before reading them would make the list of cells exact; by estimate, not measured, the count costs about what it saves.
+
+**Released:** `v0.1.0` was tagged at `067181a` on 2026-11-23. What is on `main` after it is under `[Unreleased]` in the changelog; the next tag is Andrew's, after a pull request that dates that section.
 
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).
 

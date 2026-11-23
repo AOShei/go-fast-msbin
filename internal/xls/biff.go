@@ -60,7 +60,10 @@ var le = binary.LittleEndian
 // cursor reads the body of a record, and on into the CONTINUE records
 // that follow it where the body is longer than a record can be.
 type cursor struct {
-	data  []byte // the stream
+	data []byte // the stream, or the part of it the records are read from
+	// more, where the data is a part of the stream, returns it with what
+	// follows it in the stream added, or as it is at the stream's end.
+	more  func(have []byte) []byte
 	b     []byte // what is left of the record's body
 	next  int    // where the next record starts
 	short bool   // a record ran past the end of the stream
@@ -104,12 +107,14 @@ func (c *cursor) bytes(dst []byte, cch int) ([]byte, bool) {
 // record puts the cursor on the record at offset at, and returns its
 // type. ok is false at the end of the stream.
 func (c *cursor) record(at int) (typ uint16, ok bool) {
+	c.need(at + 4)
 	if at < 0 || at+4 > len(c.data) {
 		c.b, c.next = nil, len(c.data)
 		return 0, false
 	}
 	typ = le.Uint16(c.data[at:])
 	end := at + 4 + int(le.Uint16(c.data[at+2:]))
+	c.need(end)
 	if end > len(c.data) {
 		end, c.short = len(c.data), true
 	}
@@ -117,9 +122,29 @@ func (c *cursor) record(at int) (typ uint16, ok bool) {
 	return typ, true
 }
 
+// need sees to it that the data reaches to end, where the stream does.
+func (c *cursor) need(end int) {
+	for end > len(c.data) && c.more != nil {
+		n := len(c.data)
+		if c.data = c.more(c.data); len(c.data) == n {
+			c.more = nil // the end of the stream
+		}
+	}
+}
+
+// peek returns the type of the record that follows, without moving to
+// it.
+func (c *cursor) peek() (typ uint16, ok bool) {
+	c.need(c.next + 4)
+	if c.next < 0 || c.next+4 > len(c.data) {
+		return 0, false
+	}
+	return le.Uint16(c.data[c.next:]), true
+}
+
 // cont moves to the record that follows if it is a CONTINUE record.
 func (c *cursor) cont() bool {
-	if c.next+4 > len(c.data) || le.Uint16(c.data[c.next:]) != recContinue {
+	if typ, ok := c.peek(); !ok || typ != recContinue {
 		return false
 	}
 	c.record(c.next)

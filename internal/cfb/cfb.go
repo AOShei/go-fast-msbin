@@ -358,6 +358,23 @@ func (f *File) stream(start uint32, size int64, short bool) (*Stream, error) {
 // Size returns the length of the stream in bytes.
 func (s *Stream) Size() int64 { return s.size }
 
+// Whole reports whether every byte of the stream can be read: each of
+// its sectors lies within the file. It reads nothing. A short stream,
+// which is cut from another, is not looked into and reports false.
+func (s *Stream) Whole() bool {
+	if s.short {
+		return false
+	}
+	for i, sector := range s.sectors {
+		start := (int64(sector) + 1) << s.shift
+		need := min(int64(1)<<s.shift, s.size-int64(i)<<s.shift)
+		if need > 0 && start+need > s.f.size {
+			return false
+		}
+	}
+	return true
+}
+
 // ReadAt reads from the stream at the given offset, as io.ReaderAt.
 func (s *Stream) ReadAt(p []byte, off int64) (int, error) {
 	if off < 0 {

@@ -277,10 +277,10 @@ func (b *Book) readStored(ctx context.Context, index int) *unit.Result {
 func (b *Book) macroCode(ref sheetRef, room int64) (string, int) {
 	var sb strings.Builder
 	sh := &sheet{b: b}
-	sh.c.data, sh.c.cp = b.data, b.cp
+	sh.c.cp = b.cp
 	c := &sh.c
 	missed := 0
-	if typ, ok := c.record(ref.pos); !ok || typ != recBOF {
+	if typ, ok := c.record(b.at(c, ref.pos)); !ok || typ != recBOF {
 		return "", 0
 	}
 	depth := 0

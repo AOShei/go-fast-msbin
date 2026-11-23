@@ -473,7 +473,7 @@ The times are ranges because the machine was shared and busy (a load of 9 to 22 
 
 **Left for after the release**, as decided or found on the way:
 
-- The text of earlier saves that a file no longer points to (Q9: to be reviewed after the release).
+- The text of earlier saves that a file no longer points to (Q9: to be reviewed after the release). **Decided by Andrew on 2026-11-23: dropped for now.** It is a known limitation, listed in the README, and is taken up again only if a user asks for it.
 - Each library's owner decides whether its command routes embedded `.doc`, `.xls` and `.ppt` files here.
 - For go-fast-ooxml's owner: it translates a whole cell by its font where the format has fonts by run; its number formats pick the negative section for a value that rounds to zero, and round the fifteenth digit from the binary value.
 - Reading streams in pieces, for memory; the properties of encrypted presentations; equations; Word XOR obfuscation verified on a real file, if one is found. (Taken up on 2026-11-23: see "After Phase 9".)

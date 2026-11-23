@@ -101,7 +101,10 @@ What is read:
   document's `Metadata.Encrypted` is set, whoever's password opened the
   file, and it has the warning `msbin.decrypted`, which names the scheme and
   says which password that was. These
-  schemes are weak: they are read because files kept in them exist. The
+  schemes are weak: they are read because files kept in them exist. Each
+  is checked against files other programs wrote, but for the XOR obfuscation
+  of Word documents, of which none was found: there, LibreOffice opens what
+  this project's test writer obfuscates, with the same password. The
   properties of an encrypted presentation, which are kept encrypted in a
   stream of their own, are read from it. Not read: the properties of a
   workbook or Word document that encrypts them in the same way (none was
@@ -198,6 +201,7 @@ go test -run 'TestCellsAgainstXlrd|TestShownAgainstLibreOffice|TestTwins|TestFor
 go test -run '^$' -bench Large .                                               # needs bench/baseline.py generate
 go test -run 'TestSoak|TestAllocationBudgets' -v .                             # the whole corpus four ways; what the large files allocate
 go run ./cmd/gofastmsbin file.doc
+GOFAST_MSBIN_LIBREOFFICE=1 go test -run TestEncryptedWordAgainstLibreOffice . # LibreOffice opens what the test writer encrypts; contained
 ```
 
 Tests that need the corpus or the Python comparison tools skip themselves when

@@ -424,7 +424,7 @@ On branch `phase-7-encryption`: encrypted files of the three formats, opened wit
 | Schemes verified on real files | XOR obfuscation (workbooks), RC4 (workbooks, Word), RC4 CryptoAPI (workbooks, Word, PowerPoint) |
 | Fuzzing | `FuzzEncrypted`, 32 million executions, no finding |
 
-- **Not verified on a real file: XOR obfuscation of a Word document.** The corpus has none, and neither LibreOffice nor Word since 97 writes one. It is tested against this project's own writer only, which was written from the same description.
+- **Not verified on a real file: XOR obfuscation of a Word document.** The corpus has none, and neither LibreOffice nor Word since 97 writes one. It is tested against this project's own writer only, which was written from the same description. (Since 2026-11-23 it is checked against LibreOffice's reader: see "After Phase 9".)
 - **The properties of an encrypted presentation** (added 2026-11-23) are read from the stream `EncryptedSummary`: each property set encrypted with a key of its own, and a list of them encrypted with the first key, as are the eight bytes that say where the list is. Checked against three files of the corpus written by PowerPoint.
 - **Not read**: the properties of a Word document or workbook that encrypts them in the same way; no such file was found to check a reader against, and the encrypted Word documents and workbooks of the corpus keep their properties plain.
 - msoffcrypto-tool was not needed as an oracle: the files with known passwords say in their text what they hold.
@@ -506,7 +506,7 @@ Andrew asked for the shortfalls of the list above to be made good before the rel
   | `large.ppt` | 0.03 s, 35 to 39 MB | 0.03 s, 33 to 35 MB |
 
   The target of 215 MB (calamine's peak) is met. The library's own times are as they were (`large.xls` 0.052 s with all processors, 0.113 s with one). The figures of "Phase 9: result" were taken on a busy machine; these on a quiet one (load 1 to 1.5).
-- **Word XOR obfuscation on a real file**: see below.
+- **Word XOR obfuscation.** No file written by Word in this scheme was found: the corpus has none, and LibreOffice (26.8) no longer writes Word 6/95 files, the only ones it obfuscated. It still reads them. So the check is turned around (`TestEncryptedWordAgainstLibreOffice`, run with `GOFAST_MSBIN_LIBREOFFICE=1`; LibreOffice contained by `testdata/oracle_crypt.py`): the documents this project's writer obfuscates, of Word 97 and of Word 6, are opened by LibreOffice with their password, which gives exactly their text, accents included, and are refused with another password; the same for RC4. The reader here and LibreOffice's therefore agree on the key, the verifier, the array, the bytes left as they are, and where the obfuscated part begins (0x44 and 0x34). The obfuscation of Word 6/95 documents, which no test covered, now has one (`TestEncryptedWord6`). What stays unverified: a file written by Word itself.
 
 **To release:** merge the open pull requests in order; date the changelog (`[0.1.0] - <date>`) in a pull request of its own; tag `v0.1.0` on `main`. The tag is Andrew's.
 

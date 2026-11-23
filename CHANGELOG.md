@@ -35,7 +35,8 @@ phase of the work found and measured.
   never run; **embedded files** as `Children`, through `Options.Child`.
 - **Encrypted files**, with `Options.Password`: XOR obfuscation, RC4 and RC4
   CryptoAPI. `ErrPasswordRequired`, `ErrWrongPassword`; the password Excel
-  uses when none is set is tried unasked; the warning `msbin.decrypted`.
+  uses when none is set is tried unasked. A decrypted document has
+  `Metadata.Encrypted` set and the warning `msbin.decrypted`.
 - **What a file declares of display**: `hidden` for a hidden sheet, row,
   column, slide or shape, hidden text, and a cell its format shows as
   nothing.

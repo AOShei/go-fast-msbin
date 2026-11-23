@@ -220,6 +220,23 @@ func EncryptWord(streams map[string][]byte, scheme int, password string) {
 	copy(table, m.header)
 }
 
+// EncryptWord6 obfuscates the stream of a document of Word 6 or 95, which
+// knows no other scheme: its flags say it is encrypted, the key and the
+// verifier of the password stand in its first bytes, and the bytes after
+// the first 0x34 are combined with the password's array.
+func EncryptWord6(w []byte, password string) {
+	le := binary.LittleEndian
+	key, hash, array := xorPassword(password, 7)
+	le.PutUint16(w[10:], le.Uint16(w[10:])|0x0100)
+	le.PutUint16(w[14:], hash)
+	le.PutUint16(w[16:], key)
+	for i := 0x34; i < len(w); i++ {
+		if c := w[i] ^ array[i&15]; w[i] != 0 && c != 0 {
+			w[i] = c
+		}
+	}
+}
+
 // Encrypt encrypts the presentation: every object with the key of its
 // number, and an object more that says how. It returns the streams, the
 // stream of pictures encrypted with them.

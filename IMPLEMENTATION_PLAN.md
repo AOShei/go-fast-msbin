@@ -555,6 +555,13 @@ What is left, by the profile of the workbooks: placing cells into tables (23%, b
 
 The large files are as they were. What is left in workbooks, by the profile: number formats (26%, of which finding a number's digits is over a third) and clearing and copying memory (17%: the list of cells, a sheet's records, the tables). Counting a sheet's cells before reading them would make the list of cells exact; by estimate, not measured, the count costs about what it saves.
 
+**The number-format engine follows LibreOffice** (2026-11-24; Andrew's decision, go-fast-ooxml PR #47 and v0.3.0, `OOXML_TO_MSBIN_NUMFMT_6B.md`). Of the two differences of "Phase 2: result":
+
+- *The fifteenth digit*: brought over as it is in go-fast-ooxml v0.3.0 (`decimal.long`, `appendElapsed`, `TestFifteenthDigitAndZeroDurations`, and the table, now 6,972 pairs). Every cell of every workbook of the corpus compared before and after: 5,857 of 17,959,702 change, in 58 workbooks. 5,854 differ by a unit in the fifteenth digit. 3 are numbers below 1e-300, which the format keeps with fewer digits than fifteen: the shortest decimal has those and no more (`2.121995791E-314`, which was `2.12199579096527E-314`). That follows from the rule; what LibreOffice shows for such numbers is not in the table and was not checked. Through the command, the datasheets of charts in 5 presentations change the same way.
+- *A negative value that rounds to zero*: nothing changed. go-fast-ooxml's table has LibreOffice using the negative section for a stored value down to -1e-15, as the engine does. The case of Phase 2 was seen against a twin, a file LibreOffice converted, and LibreOffice turns a formula's result within rounding error of zero into 0 when it recalculates: a different value, not a different format. The file of that case was not found again to confirm it held a formula.
+
+The command requires go-fast-ooxml v0.3.0.
+
 **Released:** `v0.1.0` was tagged at `067181a` on 2026-11-23. What is on `main` after it is under `[Unreleased]` in the changelog; the next tag is Andrew's, after a pull request that dates that section.
 
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).

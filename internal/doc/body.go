@@ -75,6 +75,12 @@ type reader struct {
 	num  *numState
 	root *reader // the reader of the body, for one that reads a note
 
+	// A run of paragraphs of code being joined into one block: its text,
+	// and which block of which list it is.
+	code   strings.Builder
+	codeIn *[]gofastcore.Block
+	codeAt int
+
 	equations  map[uint32]*equation // those read, by the number of their object
 	eqBytes    int                  // the bytes of equations in the paragraph being read
 	unmappedEq int                  // characters of equations that Unicode has nothing for
@@ -950,7 +956,17 @@ func (r *reader) emit(out *[]gofastcore.Block, b gofastcore.Block) {
 		b.Display == 0 && (*out)[n-1].Display == 0 {
 		last := &(*out)[n-1]
 		at := len(last.Text) + 1
-		last.Text += "\n" + b.Text
+		// The text of the run is built in one place that grows, and the
+		// block's text is what has been written of it so far: a run of
+		// many paragraphs is not copied once for each.
+		if r.codeIn != out || r.codeAt != n-1 || r.code.Len() != len(last.Text) {
+			r.code = strings.Builder{}
+			r.code.WriteString(last.Text)
+			r.codeIn, r.codeAt = out, n-1
+		}
+		r.code.WriteByte('\n')
+		r.code.WriteString(b.Text)
+		last.Text = r.code.String()
 		for _, span := range b.Spans {
 			span.Start += at
 			span.End += at

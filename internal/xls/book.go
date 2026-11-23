@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -179,11 +180,13 @@ func (b *Book) at(c *cursor, pos int) int {
 		if n <= 0 {
 			return have
 		}
-		have = append(have, make([]byte, n)...)
-		got, _ := b.src.ReadAt(have[len(have)-n:], int64(from))
-		return have[:len(have)-n+max(got, 0)]
+		// Room for it, and no copy of what is not yet read.
+		at := len(have)
+		have = slices.Grow(have, n)[:at+n]
+		got, _ := b.src.ReadAt(have[at:], int64(from))
+		return have[:at+max(got, 0)]
 	}
-	c.data = read(make([]byte, 0, end-pos), end-pos)
+	c.data = read(nil, end-pos)
 	c.more = func(have []byte) []byte {
 		return read(have, min(max(len(have), firstChunk), maxChunk))
 	}

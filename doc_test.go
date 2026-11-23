@@ -4,8 +4,10 @@ import (
 	"context"
 	"io"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AOShei/go-fast-core"
 	t "github.com/AOShei/go-fast-msbin/internal/msbintest"
@@ -151,6 +153,41 @@ func TestWordTable(tt *testing.T) {
 	}
 	if !reflect.DeepEqual(b[1].Table.Merges, []gofastcore.Merge{{Row: 1, Col: 0, RowSpan: 1, ColSpan: 2}, {Row: 2, Col: 0, RowSpan: 2, ColSpan: 1}}) || b[1].Table.HeaderRows != 1 {
 		tt.Errorf("merges %+v, header rows %d", b[1].Table.Merges, b[1].Table.HeaderRows)
+	}
+}
+
+// A long run of paragraphs of code is one block, and joining them costs
+// no more than their text: not a copy of the block for every paragraph.
+func TestWordLongRunOfCode(tt *testing.T) {
+	const n = 60000
+	paras := make([]t.DocPara, 0, n+2)
+	paras = append(paras, t.DocPara{Text: "Before."})
+	var want strings.Builder
+	for i := 0; i < n; i++ {
+		line := "line " + strconv.Itoa(i) + " of the listing, some forty bytes long"
+		paras = append(paras, t.DocPara{Text: line, Style: 5})
+		if i > 0 {
+			want.WriteByte('\n')
+		}
+		want.WriteString(line)
+	}
+	paras = append(paras, t.DocPara{Text: "After."})
+	data := wordFileOf(t.DocFile{Main: paras})
+	start := time.Now()
+	doc := mustExtract(tt, data, nil)
+	took := time.Since(start)
+	b := doc.Parts[0].Blocks
+	if len(b) != 3 || b[1].Kind != gofastcore.KindCode || b[1].Text != want.String() || b[2].Text != "After." {
+		tt.Fatalf("%d blocks; the code is %d bytes, want %d", len(b), len(b[1].Text), want.Len())
+	}
+	// Joined by copying, this run takes more than twice the limit, and one
+	// ten times as long a hundred times that.
+	limit := 2 * time.Second
+	if underRace {
+		limit = time.Minute
+	}
+	if took > limit {
+		tt.Errorf("a run of %d paragraphs of code took %v", n, took)
 	}
 }
 

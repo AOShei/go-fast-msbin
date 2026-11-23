@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -397,6 +398,36 @@ func TestLaterEditsWin(tt *testing.T) {
 	wantLines(tt, "dual storage", slideLines(&doc.Parts[0]), []string{"paragraph as saved again"})
 }
 
+// A title of very many paragraphs is one heading, and joining them costs
+// no more than their text: not a copy of the heading for every paragraph.
+func TestPresentationLongTitle(tt *testing.T) {
+	const n = 60000
+	lines := make([]string, n)
+	for i := range lines {
+		lines[i] = "line " + strconv.Itoa(i) + " of a title, some forty bytes long"
+	}
+	deck := pptDeck{slides: []pptSlide{{
+		outline: t.PPTText(0, strings.Join(lines, "\r")),
+		shapes:  [][]byte{t.PPTShape{Top: 100, Left: 100, Right: 900, Bottom: 300, Placeholder: 13, OutlineRef: 1}.Bytes()},
+		layout:  1,
+	}}}
+	data := deck.bytes()
+	start := time.Now()
+	doc := mustExtract(tt, data, nil)
+	took := time.Since(start)
+	b := doc.Parts[0].Blocks
+	if len(b) != 1 || b[0].Kind != gofastcore.KindHeading || b[0].Text != strings.Join(lines, "\n") {
+		tt.Fatalf("%d blocks; the first has %d bytes", len(b), len(b[0].Text))
+	}
+	limit := 2 * time.Second
+	if underRace {
+		limit = time.Minute
+	}
+	if took > limit {
+		tt.Errorf("a title of %d paragraphs took %v", n, took)
+	}
+}
+
 // An equation of the Equation Editor is read with the slide that shows
 // it, in the linear form, where its picture stands; it is no embedded
 // file then. One that cannot be read stays a picture and a file.
@@ -440,6 +471,23 @@ func TestPresentationEquations(tt *testing.T) {
 	}
 	if w, ok := warning(doc.Parts[0].Warnings, gofastcore.WarnTextUnmappedGlyphs); !ok || !strings.HasPrefix(w.Message, "1 characters of equations") {
 		tt.Errorf("warnings: %+v", doc.Parts[0].Warnings)
+	}
+	// Within a limit on what may be expanded, whatever is left of it:
+	// a valid document, the equations over it not read, and said.
+	for _, limit := range []int64{1, 100, 1500, 1600, 3000, 3200, 5000} {
+		for _, o := range []*gofastcore.Options{{}, {Child: opts.Child}} {
+			o.Limits.MaxDecodedBytes = limit
+			tight, err := extract(deck.bytes(), o)
+			checkOutcome(tt, tight, err)
+			if tight == nil {
+				continue
+			}
+			_, onSlide := warning(tight.Parts[0].Warnings, gofastcore.WarnLimitExceeded)
+			_, onDoc := warning(tight.Warnings, gofastcore.WarnLimitExceeded)
+			if limit < 1500 && !onSlide && !onDoc {
+				tt.Errorf("a limit of %d bytes expanded: nothing says it was met", limit)
+			}
+		}
 	}
 	// A limit on the text holds for equations as for any text.
 	small := mustExtract(tt, deck.bytes(), &gofastcore.Options{Limits: gofastcore.Limits{MaxTextBytes: gofastcore.BlockCost + 3}})

@@ -90,7 +90,12 @@ What is read:
   the object packager, an Office Open XML package, the content another
   program stored, and a document held as a storage of the file (a workbook in
   a Word document), which is written out as a compound file of its own. A
-  linked object is `input.external_reference`; nothing is fetched.
+  linked object is `input.external_reference`; nothing is fetched. Without
+  `Options.Child` the files are listed, with their names, kinds and sizes. A
+  presentation keeps its embedded files compressed, and one that is only
+  listed is expanded no further than it takes to say what it is: its size is
+  then the size it states, which for a file whose compressed data breaks off
+  is more than could be expanded.
 - **Encrypted files**, with `Options.Password`: XOR obfuscation, the RC4
   encryption of Office 97 and RC4 with a CryptoAPI key, for the three
   formats. The password is checked against what the file keeps for that

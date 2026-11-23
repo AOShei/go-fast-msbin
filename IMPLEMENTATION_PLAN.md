@@ -425,7 +425,8 @@ On branch `phase-7-encryption`: encrypted files of the three formats, opened wit
 | Fuzzing | `FuzzEncrypted`, 32 million executions, no finding |
 
 - **Not verified on a real file: XOR obfuscation of a Word document.** The corpus has none, and neither LibreOffice nor Word since 97 writes one. It is tested against this project's own writer only, which was written from the same description.
-- **Not read**: the properties of an encrypted presentation, and of a Word document or workbook that encrypts them, which are in an encrypted stream of their own; such a file has the properties its plain streams hold, usually none.
+- **The properties of an encrypted presentation** (added 2026-11-23) are read from the stream `EncryptedSummary`: each property set encrypted with a key of its own, and a list of them encrypted with the first key, as are the eight bytes that say where the list is. Checked against three files of the corpus written by PowerPoint.
+- **Not read**: the properties of a Word document or workbook that encrypts them in the same way; no such file was found to check a reader against, and the encrypted Word documents and workbooks of the corpus keep their properties plain.
 - msoffcrypto-tool was not needed as an oracle: the files with known passwords say in their text what they hold.
 
 ### Phase 8: result (2026-11-22)

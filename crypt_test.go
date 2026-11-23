@@ -102,10 +102,37 @@ func TestEncryptedPresentation(tt *testing.T) {
 			layout: 1,
 		}},
 	}
-	var f t.PPTFile
+	// Its properties are in a stream of their own, encrypted set by set.
+	f := t.PPTFile{Summary: map[string][]byte{
+		"\x05SummaryInformation": t.PropertyStream(t.Section{Format: t.FmtSummary, CodePage: 1252,
+			Props: []t.Prop{{ID: 2, Value: "Kept from view"}, {ID: 4, Value: "An author"}}}),
+		"\x05DocumentSummaryInformation": t.PropertyStream(t.Section{Format: t.FmtDocSummary, CodePage: 1200,
+			Props: []t.Prop{{ID: 15, Value: t.Wide("A company")}}}),
+	}}
 	streams := f.Encrypt(deck.all(), pptDoc, pictures, "hello")
 	doc := opens(tt, "presentation", t.Compound(streams), "hello", "RC4 CryptoAPI")
 	wantLines(tt, "the slide", slideLines(&doc.Parts[0]), []string{"heading1 Behind a password", `image image/png 4x3 ""`})
+	if m := doc.Metadata; m.Title != "Kept from view" || len(m.Authors) != 1 || m.Authors[0] != "An author" || m.Extra["company"] != "A company" {
+		tt.Errorf("the properties: %+v", m)
+	}
+	if _, ok := warning(doc.Warnings, gofastmsbin.WarnPropertiesDamaged); ok {
+		tt.Errorf("warnings: %+v", doc.Warnings)
+	}
+	// A list of the sets that breaks off: what can be read, and a warning.
+	whole := streams["EncryptedSummary"]
+	streams["EncryptedSummary"] = whole[:len(whole)-30]
+	doc = opens(tt, "presentation with a damaged list", t.Compound(streams), "hello", "RC4 CryptoAPI")
+	if w, ok := warning(doc.Warnings, gofastmsbin.WarnPropertiesDamaged); !ok || w.Message != "EncryptedSummary" || doc.Metadata.Title != "" && doc.Metadata.Title != "Kept from view" {
+		tt.Errorf("a damaged list: %+v, %+v", doc.Metadata, doc.Warnings)
+	}
+	// One that points outside the stream, or is noise: no more than that.
+	for _, n := range []int{0, 5, 8, 40} {
+		streams["EncryptedSummary"] = append([]byte(nil), whole[:n]...)
+		doc = opens(tt, "presentation with a cut stream", t.Compound(streams), "hello", "RC4 CryptoAPI")
+		if _, ok := warning(doc.Warnings, gofastmsbin.WarnPropertiesDamaged); !ok {
+			tt.Errorf("a stream of %d bytes: %+v", n, doc.Warnings)
+		}
+	}
 }
 
 // The encrypted files of the corpus whose passwords their test suites
@@ -164,6 +191,9 @@ func TestEncryptedCorpus(tt *testing.T) {
 		}
 		if !strings.Contains(text.String(), want[2]) {
 			tt.Errorf("%s: %q is not in its text", name, want[2])
+		}
+		if name == "testPPT_protected_passtika.ppt" && (doc.Metadata.Title != "Encrypted" || doc.Metadata.Application != "Microsoft Office PowerPoint") {
+			tt.Errorf("%s: its properties: %+v", name, doc.Metadata)
 		}
 		if name == "ppt_with_png_encrypted.ppt" && pictures == 0 {
 			tt.Errorf("%s: its picture was not decrypted", name)

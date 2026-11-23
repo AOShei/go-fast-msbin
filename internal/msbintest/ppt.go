@@ -358,9 +358,13 @@ func PPTCommentOn(author, text string, year, month, day, hour, minute uint16) []
 // PPTFile assembles the stream of a presentation: objects with their
 // persist numbers, written by one or more edits.
 type PPTFile struct {
-	stream []byte
-	last   uint32 // where the last edit is
-	seed   uint32
+	// Summary is the property sets an encrypted presentation keeps,
+	// encrypted, in a stream of their own: the name of each and its
+	// bytes.
+	Summary map[string][]byte
+	stream  []byte
+	last    uint32 // where the last edit is
+	seed    uint32
 }
 
 // Edit writes objects, each under a persist number, with the directory

@@ -1,14 +1,18 @@
 package gofastmsbin
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"unicode/utf16"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin/internal/crypt"
 	"github.com/AOShei/go-fast-msbin/internal/detect"
+	"github.com/AOShei/go-fast-msbin/internal/oleps"
 	"github.com/AOShei/go-fast-msbin/internal/ppt"
+	"github.com/AOShei/go-fast-msbin/internal/unit"
 )
 
 // The records of a workbook that are not encrypted in an encrypted one
@@ -202,6 +206,7 @@ func (f *File) decryptWord(table, data []byte) error {
 // decryptDeck decrypts a presentation's objects and pictures in place.
 func (f *File) decryptDeck() error {
 	scheme, with := crypt.CryptoAPI, ""
+	var opened *crypt.Key
 	err := ppt.Decrypt(f.deck, f.pictures, f.currentEdit, func(header []byte) (*crypt.Key, error) {
 		h, err := crypt.Parse(header)
 		if err != nil {
@@ -209,7 +214,7 @@ func (f *File) decryptDeck() error {
 		}
 		scheme = h.Scheme
 		key, w, err := f.key(h, 0)
-		with = w
+		with, opened = w, key
 		return key, err
 	})
 	switch {
@@ -218,6 +223,91 @@ func (f *File) decryptDeck() error {
 	case err != nil:
 		return f.malformedCrypt()
 	}
+	f.encryptedProperties(opened)
 	f.decrypted(scheme, with)
 	return nil
+}
+
+// The stream in which an encrypted presentation keeps its property
+// sets, and the bounds on what is read of it.
+const (
+	summaryStream  = "EncryptedSummary"
+	maxSummarySets = 8        // the property sets listed in it that are looked at
+	maxSummaryList = 64 << 10 // the bytes of the list
+)
+
+// encryptedProperties reads the properties of an encrypted presentation,
+// which are not in the two streams of an ordinary file: both property
+// sets are kept in one stream, each encrypted with a key of its own, and
+// after them a list, encrypted with the first key, of where each is
+// ([MS-OFFCRYPTO] 2.3.5.4). What is read replaces what the streams of
+// the ordinary names gave, which in such a file are absent or empty.
+func (f *File) encryptedProperties(key *crypt.Key) {
+	if key == nil || !f.hasStream(summaryStream) {
+		return
+	}
+	s, err := f.stream(summaryStream)
+	if err != nil {
+		return
+	}
+	b, cut, err := unit.ReadAll(s, 2*oleps.MaxStream+maxSummaryList)
+	le := binary.LittleEndian
+	sets := map[string][]byte{}
+	damaged := cut || err != nil || len(b) < 8
+	if len(b) >= 8 {
+		// Where the list is and how long: encrypted too, on its own.
+		head := append([]byte(nil), b[:8]...)
+		key.Block(head, 0)
+		at, size := int64(le.Uint32(head)), int64(le.Uint32(head[4:]))
+		if at < 8 || at > int64(len(b)) {
+			at, damaged = int64(len(b)), true
+		}
+		list := append([]byte(nil), b[at:min(at+min(size, maxSummaryList), int64(len(b)))]...)
+		key.Block(list, 0)
+		count := 0
+		if len(list) >= 4 {
+			count = int(min(le.Uint32(list), maxSummarySets))
+			list = list[4:]
+		}
+		for ; count > 0; count-- {
+			// Where the set is and how long, the number of its key, the
+			// length of its name, flags, four bytes unused, the name.
+			if len(list) < 16 {
+				damaged = true
+				break
+			}
+			from, n, block, chars := int64(le.Uint32(list)), int64(le.Uint32(list[4:])), le.Uint16(list[8:]), int(list[10])
+			list = list[16:]
+			if len(list) < 2*chars {
+				damaged = true
+				break
+			}
+			units := make([]uint16, chars)
+			for i := range units {
+				units[i] = le.Uint16(list[2*i:])
+			}
+			list = list[min(2*chars+2, len(list)):]
+			if from < 8 || from > at || n > at-from || n > oleps.MaxStream {
+				damaged = true
+				continue
+			}
+			set := append([]byte(nil), b[from:from+n]...)
+			key.Block(set, uint32(block))
+			sets[string(utf16.Decode(units))] = set
+		}
+	}
+	has := func(name string) bool { _, ok := sets[name]; return ok || f.hasStream(name) }
+	open := func(name string) (unit.Stream, error) {
+		if set, ok := sets[name]; ok {
+			return bytes.NewReader(set), nil
+		}
+		return f.stream(name)
+	}
+	meta, ws := metadata(has, open)
+	if damaged {
+		ws = append(ws, gofastcore.Warning{Code: WarnPropertiesDamaged, Severity: gofastcore.SeverityWarning, Message: summaryStream})
+	}
+	f.meta = meta
+	f.opened = append(f.opened[:f.metaFrom:f.metaFrom], append(ws, f.opened[f.metaTo:]...)...)
+	f.metaTo = f.metaFrom + len(ws)
 }

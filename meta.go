@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin/internal/cfb"
 	"github.com/AOShei/go-fast-msbin/internal/clean"
 	"github.com/AOShei/go-fast-msbin/internal/oleps"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
@@ -22,9 +21,10 @@ const customPrefix = "custom."
 const linkedProperty = 0x01000000
 
 // metadata reads the document's properties from its two property-set
-// streams. A stream that is missing gives nothing; one that is damaged
-// gives what could be read of it, and a warning.
-func metadata(f *cfb.File, open func(name string) (unit.Stream, error)) (gofastcore.Metadata, []gofastcore.Warning) {
+// streams: has says whether there is a stream of a name, and open opens
+// it. A stream that is missing gives nothing; one that is damaged gives
+// what could be read of it, and a warning.
+func metadata(has func(name string) bool, open func(name string) (unit.Stream, error)) (gofastcore.Metadata, []gofastcore.Warning) {
 	var m gofastcore.Metadata
 	var ws []gofastcore.Warning
 	var lost warn.Lost
@@ -44,7 +44,7 @@ func metadata(f *cfb.File, open func(name string) (unit.Stream, error)) (gofastc
 		m.Extra[key] = v
 	}
 	for _, name := range []string{oleps.SummaryStream, oleps.DocSummaryStream} {
-		if !f.Has(name) || f.IsStorage(name) {
+		if !has(name) {
 			continue
 		}
 		label := strings.TrimPrefix(name, "\x05")

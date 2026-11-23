@@ -30,14 +30,17 @@ minor version may change the API.
 
 ### Changed
 
-- Faster on batches of ordinary files: the workbooks of the corpus in 0.91 s
+- Faster on batches of ordinary files: the workbooks of the corpus in 0.77 s
   (was 1.09 s), the Word documents in 0.18 s (was 0.20 s), the
-  presentations in 0.30 s (was 0.45 s). A workbook of many small sheets
+  presentations in 0.28 s (was 0.45 s). A workbook of many small sheets
   allocates a quarter less.
 - An embedded object of a presentation that is only listed (no
   `Options.Child`) is expanded only as far as it takes to say what it is.
   Its size is then what it says it expands to; for an object whose
   compressed data breaks off, that is more than what could be expanded.
+- An embedded object of a presentation is named for what it is (`.doc`,
+  `.xls`, `.ppt`) from its directory alone. One that is damaged outside its
+  directory now gets that name too; it had none.
 
 ## [0.1.0] - 2026-11-23
 

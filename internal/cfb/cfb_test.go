@@ -167,6 +167,12 @@ func outcome(t testing.TB, what string, data []byte) {
 			}
 			return
 		}
+		// What opens, opens for its directory alone, and names the same.
+		if d, err := cfb.OpenDirectory(bytes.NewReader(data), int64(len(data))); err != nil {
+			t.Errorf("%s: opens, but not for its directory alone: %v", what, err)
+		} else if got, want := strings.Join(d.Names(), "\x00"), strings.Join(f.Names(), "\x00"); got != want {
+			t.Errorf("%s: opened for its directory alone it names %q, opened whole %q", what, got, want)
+		}
 		paths := [][]string{{"a", "b", "c", "d"}, {"\x06DataSpaces", "Version"}}
 		for _, name := range f.Names() {
 			paths = append(paths, []string{name})
@@ -339,6 +345,71 @@ func TestMemoryIsBoundedByTheFile(t *testing.T) {
 	per := (after.bytes - before.bytes) / 20
 	if per > uint64(len(data))/16 || allocs > 200 {
 		t.Errorf("opening a file of %d bytes allocates %d bytes in %v allocations", len(data), per, allocs)
+	}
+}
+
+// reads counts what is read of a file, and how far into it.
+type reads struct {
+	r     io.ReaderAt
+	bytes int64
+	far   int64
+}
+
+func (r *reads) ReadAt(p []byte, off int64) (int, error) {
+	n, err := r.r.ReadAt(p, off)
+	r.bytes += int64(n)
+	r.far = max(r.far, off+int64(n))
+	return n, err
+}
+
+// A file opened for its directory alone names what the file opened whole
+// names, gives no stream, and is read only where its directory and the
+// table's sectors for it are: of a large file, a small part. It opens
+// where the rest of the file is gone.
+func TestDirectoryAlone(t *testing.T) {
+	builds := map[string]func(map[string][]byte) []byte{
+		"sectors of 512 bytes":  msbintest.Compound,
+		"sectors of 4096 bytes": msbintest.CompoundV4,
+		"written by Write":      func(m map[string][]byte) []byte { return cfb.Write(tree(m)) },
+	}
+	for name, build := range builds {
+		streams := sample()
+		streams["Larger"] = content(3<<20, 11)
+		data := build(streams)
+		whole, err := cfb.Open(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		counted := &reads{r: bytes.NewReader(data)}
+		f, err := cfb.OpenDirectory(counted, int64(len(data)))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got, want := strings.Join(f.Names(), "|"), strings.Join(whole.Names(), "|"); got != want {
+			t.Errorf("%s: names %q, the file opened whole %q", name, got, want)
+		}
+		for path := range streams {
+			parts := strings.Split(path, "/")
+			if !f.Has(parts...) {
+				t.Errorf("%s: %q is not found", name, path)
+			}
+			if _, err := f.Open(parts...); !errors.Is(err, cfb.ErrNotFound) {
+				t.Errorf("%s: opening %q: %v, want a refusal", name, path, err)
+			}
+		}
+		if counted.bytes > int64(len(data))/100 {
+			t.Errorf("%s: %d bytes read of %d", name, counted.bytes, len(data))
+		}
+		// With everything past what was read gone, it still opens: that
+		// is what is expanded of a compressed object.
+		cut := append([]byte(nil), data[:counted.far]...)
+		g, err := cfb.OpenDirectory(bytes.NewReader(cut), int64(len(data)))
+		if err != nil {
+			t.Errorf("%s: cut after the %d bytes that were read: %v", name, counted.far, err)
+		} else if got, want := strings.Join(g.Names(), "|"), strings.Join(whole.Names(), "|"); got != want {
+			t.Errorf("%s: cut, names %q, want %q", name, got, want)
+		}
+		t.Logf("%s: %d bytes read of %d, none past %d", name, counted.bytes, len(data), counted.far)
 	}
 }
 

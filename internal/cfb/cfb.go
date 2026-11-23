@@ -80,6 +80,7 @@ type File struct {
 	miniShift  uint // of a short-stream sector: 6
 	sectors    uint32
 	fat        []uint32
+	lazy       *lazyFAT // of a file opened for its directory alone
 	miniFAT    []uint32
 	entries    []entry
 	miniCutoff int64
@@ -94,10 +95,31 @@ type File struct {
 	Damaged string
 }
 
+// lazyFAT is the allocation table of a file opened for its directory
+// alone: a sector of the table is read when a chain first goes through
+// it.
+type lazyFAT struct {
+	where  []uint32 // the sectors of the table
+	have   []bool   // which of them have been read
+	buf    []byte
+	failed error // the first sector of the table that could not be read
+}
+
 // Open reads the structure of the compound file of the given size in r:
 // its allocation tables and its directory. The content of streams is read
 // when it is asked for.
-func Open(r io.ReaderAt, size int64) (*File, error) {
+func Open(r io.ReaderAt, size int64) (*File, error) { return open(r, size, false) }
+
+// OpenDirectory reads the directory of the compound file and no more of
+// it than finding the directory takes: of the allocation table, the
+// sectors the directory's chain goes through. The file says what streams
+// and storages it has (Has, Names, List); none of them can be opened. It
+// is for telling what a file is where reading it is dear, as it is from a
+// compressed object, of which only what is read is expanded. A file
+// damaged outside its directory opens this way where Open refuses it.
+func OpenDirectory(r io.ReaderAt, size int64) (*File, error) { return open(r, size, true) }
+
+func open(r io.ReaderAt, size int64, directory bool) (*File, error) {
 	var head [512]byte
 	if size < int64(len(head)) {
 		return nil, fmt.Errorf("%w: %d bytes", ErrNotCompound, size)
@@ -168,13 +190,18 @@ func Open(r io.ReaderAt, size int64) (*File, error) {
 		}
 		next = le.Uint32(buf[sectorSize-4:])
 	}
-	f.fat = make([]uint32, 0, int(fatSectors)*int(perSector))
-	for _, n := range where {
-		if err := f.sector(n, buf); err != nil {
-			return nil, err
-		}
-		for i := uint32(0); i < perSector; i++ {
-			f.fat = append(f.fat, le.Uint32(buf[4*i:]))
+	if directory {
+		f.fat = make([]uint32, int(fatSectors)*int(perSector))
+		f.lazy = &lazyFAT{where: where, have: make([]bool, len(where)), buf: make([]byte, sectorSize)}
+	} else {
+		f.fat = make([]uint32, 0, int(fatSectors)*int(perSector))
+		for _, n := range where {
+			if err := f.sector(n, buf); err != nil {
+				return nil, err
+			}
+			for i := uint32(0); i < perSector; i++ {
+				f.fat = append(f.fat, le.Uint32(buf[4*i:]))
+			}
 		}
 	}
 
@@ -183,6 +210,9 @@ func Open(r io.ReaderAt, size int64) (*File, error) {
 	// as it is sound: the entries in the sectors before the break are the
 	// file's, and those after it are lost.
 	dir, err := f.chain(firstDir, -1)
+	if err != nil && f.lazy != nil && f.lazy.failed != nil {
+		return nil, f.lazy.failed // a sector of the table cannot be read, which Open refuses too
+	}
 	if err != nil {
 		dir = f.sound(firstDir)
 		if len(dir) == 0 {
@@ -224,6 +254,9 @@ func Open(r io.ReaderAt, size int64) (*File, error) {
 	// Short streams: their sectors are cut from one stream, which the
 	// root entry names, and chained by a table of their own.
 	root := &f.entries[0]
+	if directory {
+		return f, nil
+	}
 	// A damaged container or table loses the short streams only: the file
 	// is read without them, and Damaged says so (partial results beat
 	// errors).
@@ -267,13 +300,39 @@ func (f *File) sound(first uint32) []uint32 {
 	var out []uint32
 	seen := map[uint32]bool{}
 	for n := first; n != endOfChain; n = f.fat[n] {
-		if n >= f.sectors || int64(n) >= int64(len(f.fat)) || seen[n] {
+		if n >= f.sectors || int64(n) >= int64(len(f.fat)) || seen[n] || !f.link(n) {
 			break
 		}
 		seen[n] = true
 		out = append(out, n)
 	}
 	return out
+}
+
+// link sees to it that the table's entry for sector n, which the table
+// has, is read. It is false where the file was opened for its directory
+// alone and the entry's sector of the table cannot be read.
+func (f *File) link(n uint32) bool {
+	l := f.lazy
+	if l == nil {
+		return true
+	}
+	per := uint32(len(l.buf) / 4)
+	k := n / per
+	if !l.have[k] {
+		if l.failed != nil {
+			return false
+		}
+		if err := f.sector(l.where[k], l.buf); err != nil {
+			l.failed = err
+			return false
+		}
+		for i := uint32(0); i < per; i++ {
+			f.fat[k*per+i] = binary.LittleEndian.Uint32(l.buf[4*i:])
+		}
+		l.have[k] = true
+	}
+	return true
 }
 
 // sector reads the sector with the given number into buf.
@@ -310,6 +369,9 @@ func (f *File) chain(first uint32, size int64) ([]uint32, error) {
 		}
 		if uint32(len(out)) >= f.sectors {
 			return nil, fmt.Errorf("%w: a chain of sectors loops", ErrDamaged)
+		}
+		if !f.link(n) {
+			return nil, f.lazy.failed
 		}
 		out = append(out, n)
 		n = f.fat[n]
@@ -485,6 +547,9 @@ func (f *File) Open(path ...string) (*Stream, error) {
 	i, ok := f.lookup(path)
 	if !ok || f.entries[i].kind != kindStream {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, strings.Join(path, "/"))
+	}
+	if f.lazy != nil {
+		return nil, fmt.Errorf("%w: %s: the file was opened for its directory alone", ErrNotFound, strings.Join(path, "/"))
 	}
 	e := &f.entries[i]
 	if e.size < 0 || e.size > f.size {

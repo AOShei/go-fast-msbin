@@ -65,7 +65,6 @@ type Doc struct {
 	bookmarks map[int64]string
 	drawing   *drawing
 	variables []variable
-	fields    int // fields of the main text, for bounding
 
 	damaged []string
 }

@@ -248,9 +248,8 @@ func (r *reader) nibbles() {
 	}
 }
 
-// list reads records up to the one that ends them. In a template's list
-// and a character's the characters and embellishments are kept as they
-// come.
+// list reads records up to the one that ends them. The embellishments
+// are kept where embell says the list is a character's own.
 func (r *reader) list(depth int, embell bool) []node {
 	var out []node
 	if depth > maxDepth {

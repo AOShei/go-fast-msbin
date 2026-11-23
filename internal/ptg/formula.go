@@ -13,7 +13,8 @@ import (
 )
 
 // Package ptg turns the compiled formulas of a workbook in the binary
-// format of Excel 97 to 2003 back into text ([MS-XLS] 2.5.198).
+// format of Excel 97 to 2003, and of Excel 5 and 95, back into text
+// ([MS-XLS] 2.5.198).
 //
 // A formula is compiled: a list of tokens (Rgce) in reverse Polish order,
 // operands before the operator that takes them, and after it the data
@@ -22,7 +23,8 @@ import (
 //
 // The parser is go-fast-ooxml's for the binary parts of an .xlsb file,
 // whose tokens are the same with other layouts: rows in 16 bits and
-// columns in 8 here, strings with a byte of flags.
+// columns in 8 here, strings with a byte of flags; in a workbook of
+// Excel 5 or 95 (Book.BIFF5), the layouts of that format.
 
 // Book is what a formula refers to outside itself: the workbook's defined
 // names, its sheets, and the table of sheet references that 3-D
@@ -479,8 +481,7 @@ func (p *parser) name(i int64) string {
 	return p.book.Names[i-1]
 }
 
-// loc reads a cell's place (RgceLoc): its row, and its column with two
-// flags saying whether each is relative.
+// ref is a row or a column of a reference, and whether it is relative.
 type ref struct {
 	n        int32
 	relative bool
@@ -502,6 +503,8 @@ func (p *parser) areaSize() int {
 	return 8
 }
 
+// loc reads a cell's place (RgceLoc): its row, and its column with two
+// flags saying whether each is relative.
 func (p *parser) loc() (row, col ref) {
 	if p.book.BIFF5 {
 		// The row in 14 bits with the two flags above it, the column in

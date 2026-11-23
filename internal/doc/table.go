@@ -142,7 +142,7 @@ func (t *tableBuilder) block(r *reader) (gofastcore.Block, bool) {
 	flat := make([]string, rows*cols)
 	any := false
 	// The cell that a cell merged down the column continues, by column.
-	above := make([]int, cols) // the index into tbl.Merges plus one, or 0
+	above := make([]int, cols) // the index into merges plus one, or 0
 	type span struct{ row, col, rows, cols int }
 	var merges []span
 	header := true

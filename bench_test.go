@@ -48,8 +48,9 @@ func BenchmarkLargePPTOneWorker(b *testing.B) { benchLarge(b, "large.ppt", 1) }
 // TestAllocationBudgets holds what reading the large files allocates to a
 // budget, so that a change that makes the library allocate much more is
 // seen: the bytes allocated and the number of allocations for one
-// reading, one sheet or slide at a time. The budgets are about a quarter
-// over what was measured when they were set.
+// reading, one sheet or slide at a time. The budgets are a quarter to a
+// half over what was measured when they were set; the allocations of the
+// workbook, which are few, have room for several times as many.
 func TestAllocationBudgets(t *testing.T) {
 	if testing.Short() || underRace {
 		t.Skip("reads the large generated files, without the race detector")

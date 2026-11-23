@@ -1,6 +1,7 @@
-// Package hidden has what the readers of the three formats share in
-// placing what the file declares about the display of text (hidden, no
-// ink) on blocks and spans.
+// Package hidden places what the file declares about the display of
+// text (hidden, no ink) on blocks and spans, as go-fast-ooxml's readers
+// share it. Here the Word reader uses it; the others declare by part,
+// block or cell.
 package hidden
 
 import (

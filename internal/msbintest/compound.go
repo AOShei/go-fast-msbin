@@ -269,5 +269,3 @@ func compound(streams map[string][]byte, shift int) []byte {
 	}
 	return out
 }
-
-// Encryption says how Encrypt encrypts a package.

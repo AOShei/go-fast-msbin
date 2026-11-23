@@ -136,7 +136,7 @@ const (
 type Placed struct {
 	Row, Col int32
 	Seq      int
-	// piece marks a later run of rows of a table too large for one
+	// Piece marks a later run of rows of a table too large for one
 	// block: it continues the block Placed just before it.
 	Piece bool
 	Block gofastcore.Block
@@ -153,7 +153,7 @@ type builder struct {
 	full  bool    // the text budget ran out: no more tables are written
 }
 
-// regions returns the sheet's cells as table blocks.
+// Regions returns the sheet's cells as table blocks.
 func (sh *Sheet) Regions(declared []Declared) []Placed {
 	b := &builder{sh: sh}
 	n := len(sh.Cells)
@@ -552,7 +552,7 @@ func (b *builder) merges() {
 	}
 }
 
-// order puts the cells in reading order, by row and then by column, if
+// Order puts the cells in reading order, by row and then by column, if
 // the file did not, and keeps the first of two cells written for one
 // place. It also puts the hidden columns in order, as runs that do not
 // touch.
@@ -594,7 +594,7 @@ func (sh *Sheet) Order() {
 	sh.HiddenRows = rows
 }
 
-// refName writes a cell's place as a reference: column letters and row
+// RefName writes a cell's place as a reference: column letters and row
 // number.
 func RefName(dst []byte, row, col int32) []byte {
 	// A column of a file of this format is in sixteen bits at most, which
@@ -625,7 +625,7 @@ func CellName(row, col int32) string {
 	return string(RefName(buf[:0], row, col))
 }
 
-// arrange puts blocks in the order of the cells they sit at; where two
+// Arrange puts blocks in the order of the cells they sit at; where two
 // sit at one cell, tables first, then notes, then what floats over the
 // sheet.
 func Arrange(blocks []Placed) []gofastcore.Block {

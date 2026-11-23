@@ -1,6 +1,7 @@
-// Package codepage turns the bytes of RTF text (\'hh escapes and 8-bit
-// text) into Unicode, for the code pages RTF names with \ansicpgN, \cpgN
-// and \fcharsetN.
+// Package codepage turns bytes in a code page into Unicode. It is
+// go-fast-rtf's, written for the code pages RTF names with \ansicpgN,
+// \cpgN and \fcharsetN; here it decodes the text of Word 6/95 documents
+// and Excel 5/95 workbooks, VBA source, property sets and file names.
 //
 // The single-byte Windows code pages 874 and 1250 to 1258 and the Mac Roman
 // page (10000) are decoded from tables, and so are the double-byte code

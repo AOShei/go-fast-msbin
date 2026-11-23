@@ -1,5 +1,6 @@
 // Package xls reads Excel workbooks in the binary format of Excel 97 to
-// 2003 (BIFF8, [MS-XLS]): the Workbook stream, a run of records.
+// 2003 (BIFF8, [MS-XLS]) and of Excel 5 and 95 (BIFF5): the Workbook
+// stream, or the Book stream of the older format, a run of records.
 package xls
 
 import (
@@ -270,7 +271,7 @@ func (c *cursor) str(dst []byte) ([]byte, bool) {
 	return c.rich(dst, cch, flags)
 }
 
-// short reads a string whose length is in 8 bits (ShortXLUnicodeString,
+// shortStr reads a string whose length is in 8 bits (ShortXLUnicodeString,
 // [MS-XLS] 2.5.240).
 func (c *cursor) shortStr(dst []byte) ([]byte, bool) {
 	c.runs = c.runs[:0]

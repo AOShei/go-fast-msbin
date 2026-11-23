@@ -1,7 +1,8 @@
 // Package doc reads Word documents in the binary format of Word 97 to
 // 2003 ([MS-DOC]): the WordDocument stream, which holds the text and the
 // pages of properties, and the table stream beside it, which holds
-// everything that says what the text is.
+// everything that says what the text is. It also reads the documents of
+// Word 6 and 95, which are one stream (word6.go).
 package doc
 
 import (
@@ -33,7 +34,7 @@ const (
 	fibWhichTbl  = 0x0200
 )
 
-// The structures of the table stream that are read, by their place among
+// The structures of the table stream, by their place among
 // the pairs of an offset and a length ([MS-DOC] 2.5.6, FibRgFcLcb97).
 const (
 	fcStshf          = 1

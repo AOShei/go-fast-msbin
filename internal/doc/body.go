@@ -152,6 +152,7 @@ func (r *reader) merge(c *reader) {
 	r.clamped += c.clamped
 	r.tracked = r.tracked || c.tracked
 	r.unmapped += c.unmapped
+	r.unmappedEq += c.unmappedEq
 	r.removed += c.removed
 	r.lost.Merge(&c.lost)
 }

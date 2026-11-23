@@ -21,7 +21,7 @@ type level struct {
 	text    string // lvlText: "%1.%2." or a bullet character
 	restart int    // lvlRestart: -1 default, 0 never, n: after level n
 	legal   bool   // isLgl: show every level in decimal
-	style   int    // the paragraph style this level belongs to, by number; -1 for none
+	style   int    // the paragraph style this level belongs to, by number; -1 for none (read, and not used: a paragraph's level is its own)
 	font    string // the font of the label, which decides what a bullet is
 	set     bool
 }
@@ -43,7 +43,6 @@ type num struct {
 type numbering struct {
 	abstracts map[int]*abstractNum
 	nums      map[int]*num
-	cut       int // labels longer than maxLabelText, cut there
 }
 
 // counter is the running state of one list definition.
@@ -76,29 +75,6 @@ func (n *numbering) levelFor(numID, ilvl int) (*level, *num, int) {
 		return nil, nil, 0
 	}
 	return &a.levels[ilvl], inst, inst.abstract
-}
-
-// levelOfStyle returns the level of a list instance that is tied to a
-// paragraph style, or -1. It is how a heading style linked to a multilevel
-// list says which level it numbers.
-func (n *numbering) levelOfStyle(numID int, styleID int) int {
-	if n == nil || styleID < 0 {
-		return -1
-	}
-	inst := n.nums[numID]
-	if inst == nil {
-		return -1
-	}
-	a := n.abstracts[inst.abstract]
-	if a == nil {
-		return -1
-	}
-	for i := range a.levels {
-		if a.levels[i].set && a.levels[i].style == styleID {
-			return i
-		}
-	}
-	return -1
 }
 
 // next advances the list for a paragraph at the given level and returns

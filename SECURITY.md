@@ -49,8 +49,8 @@ document there with a `limit.exceeded` warning; which, is in the table.
 | Shapes of a slide | 16,384 | fixed | Those past it are not read, and said |
 | Cells of one table of a Word document | 4 million | fixed | The table is cut there, and said |
 | A formula turned back into text | 32 KiB | fixed | The formula is not read back, and counted in `input.unread_content` |
-| Points of a chart; of all the charts of a sheet together | 1 million; 2 million | fixed | Cut there, and said |
-| Embedded objects | 4,096, to a depth of 64 storages | fixed | Those past it are not listed, and said |
+| Points of one series of a chart; of all the series of a chart | 1 million; 2 million | fixed | Cut there, and said |
+| Embedded objects; the nesting of the storages of one | 4,096; 64 | fixed | Objects past the number are not listed; one nested deeper is listed and not handed on. Both are said |
 | VBA projects; modules of a project | 16; 4,096 | fixed | Those past it are not read, and said |
 | Nesting of fields in a Word document; of groups of shapes | 64 | fixed | What is deeper is read as text, or not read |
 | An equation: its bytes; the nesting of its parts | 1 MiB; 64 | fixed | The equation is not read as text: it stays a picture and an embedded file |

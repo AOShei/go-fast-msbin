@@ -50,8 +50,9 @@ type Result struct {
 // whole. It is small, and is kept when the part itself has been handed
 // on.
 type Tally struct {
-	// Unread counts content of kinds that are not read: dialog sheets,
-	// formulas that could not be turned back into text.
+	// Unread counts content of kinds that are not read, by the Unread
+	// constants: dialog sheets, formulas that could not be turned back
+	// into text, sounds and videos, and the like.
 	Unread map[string]int
 	// Damaged names what could not be read to its end.
 	Damaged []string
@@ -94,6 +95,27 @@ type Source interface {
 	Summary(tallies []*Tally) []gofastcore.Warning
 }
 
+// The kinds of content that are not read, as input.unread_content names
+// them with how many there are of each.
+const (
+	UnreadDialogSheets = "dialog sheets"
+	UnreadFormulas     = "formulas not read back"
+	UnreadSounds       = "sounds"
+	UnreadVideos       = "videos"
+	UnreadTextBoxes5   = "text boxes of Excel 5/95"
+	UnreadDropDowns    = "drop-down lists of form fields (their entries)"
+)
+
+// unreadOne names one of a kind.
+var unreadOne = map[string]string{
+	UnreadDialogSheets: "dialog sheet",
+	UnreadFormulas:     "formula not read back",
+	UnreadSounds:       "sound",
+	UnreadVideos:       "video",
+	UnreadTextBoxes5:   "text box of Excel 5/95",
+	UnreadDropDowns:    "drop-down list of a form field (its entries)",
+}
+
 // Summarize turns what the tallies hold, and the names of what else could
 // not be read, into the warnings every format gives for it: links to
 // files outside, content of kinds that are not read, and what could not
@@ -124,6 +146,9 @@ func Summarize(tallies []*Tally, damaged []string) []gofastcore.Warning {
 	if len(unread) > 0 {
 		kinds := make([]string, 0, len(unread))
 		for kind, n := range unread {
+			if one, ok := unreadOne[kind]; ok && n == 1 {
+				kind = one
+			}
 			kinds = append(kinds, strconv.Itoa(n)+" "+kind)
 		}
 		sort.Strings(kinds)

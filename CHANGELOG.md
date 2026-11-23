@@ -7,6 +7,14 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Added
+
+- `input.unread_content` now says of more that it is not read: the sounds
+  and videos of a presentation, the text boxes of an Excel 5/95 workbook,
+  and the drop-down lists of a Word form (their entries; what is chosen is
+  text, as before). The message counts each kind, and names one of a kind
+  in the singular ("1 formula not read back", which was "1 formulas ...").
+
 ### Fixed
 
 - A long run of code paragraphs in a Word document, a presentation title of

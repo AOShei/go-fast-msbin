@@ -3,6 +3,7 @@ package doc
 import (
 	"bytes"
 	"context"
+	"github.com/AOShei/go-fast-msbin/internal/unit"
 	"strconv"
 	"strings"
 	"time"
@@ -159,6 +160,12 @@ func (r *reader) merge(c *reader) {
 	r.tracked = r.tracked || c.tracked
 	r.unmapped += c.unmapped
 	r.unmappedEq += c.unmappedEq
+	for kind, n := range c.unread {
+		if r.unread == nil {
+			r.unread = map[string]int{}
+		}
+		r.unread[kind] += n
+	}
 	r.removed += c.removed
 	r.lost.Merge(&c.lost)
 }
@@ -532,6 +539,15 @@ func (r *reader) run(cp, end int64, p *piece, c *chp) {
 					// shows carries as a link: it is no note. An .docx
 					// file keeps a link as an element, not as a field.
 					if code := strings.TrimSpace(string(f.code)); code != "" && n <= maxFieldDepth && hyperlink(f.code) == "" {
+						// A drop-down list of a form: what is chosen is
+						// the field's result, and so is text; the entries
+						// to choose from are in the Data stream, not read.
+						if strings.HasPrefix(code, "FORMDROPDOWN") {
+							if r.unread == nil {
+								r.unread = map[string]int{}
+							}
+							r.unread[unit.UnreadDropDowns]++
+						}
 						r.codes = append(r.codes, code)
 					}
 				}

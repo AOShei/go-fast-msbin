@@ -448,7 +448,7 @@ func (sh *sheet) record(typ uint16) bool {
 		// A dialog sheet is a worksheet marked as one: what is on it is
 		// controls, not cells ([MS-XLS] 2.4.351, fDialog).
 		if len(b) >= 2 && le.Uint16(b)&0x0010 != 0 {
-			sh.unread["dialog sheet"]++
+			sh.unread[unit.UnreadDialogSheets]++
 			return false
 		}
 	case recBOF:

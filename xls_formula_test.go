@@ -91,7 +91,7 @@ func TestFormulas(tt *testing.T) {
 	if len(got) != len(want) {
 		tt.Errorf("%d formulas, want %d: %v", len(got), len(want), got)
 	}
-	if w, ok := warning(doc.Warnings, gofastcore.WarnInputUnreadContent); !ok || w.Message != "1 formulas not read back" {
+	if w, ok := warning(doc.Warnings, gofastcore.WarnInputUnreadContent); !ok || w.Message != "1 formula not read back" {
 		tt.Errorf("%+v", doc.Warnings)
 	}
 	if w, ok := warning(doc.Warnings, gofastcore.WarnInputExternalReference); !ok || !strings.HasPrefix(w.Message, "1 link ") {

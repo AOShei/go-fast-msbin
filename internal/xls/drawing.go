@@ -1,6 +1,7 @@
 package xls
 
 import (
+	"github.com/AOShei/go-fast-msbin/internal/unit"
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
@@ -84,7 +85,15 @@ func (sh *sheet) object5(b []byte) {
 	sh.shape.col = min(int32(le.Uint16(b[10:])), grid.MaxCols-1)
 	sh.shape.row = int32(le.Uint16(b[14:]))
 	sh.objNote = false
+	// A text box: its text is in the record itself, in a layout of that
+	// version, and is not read.
+	if sh.shape.kind == objText5 {
+		sh.unread[unit.UnreadTextBoxes5]++
+	}
 }
+
+// objText5 is the kind of an object of Excel 5 or 95 that is a text box.
+const objText5 = 6
 
 // place adds a block at the cell the current shape is anchored to. It
 // reports false where there is no room for it.

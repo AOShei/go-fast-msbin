@@ -398,6 +398,32 @@ func TestLaterEditsWin(tt *testing.T) {
 	wantLines(tt, "dual storage", slideLines(&doc.Parts[0]), []string{"paragraph as saved again"})
 }
 
+// What a presentation holds that is not read is said, with how many:
+// the sounds it keeps, and the videos and the sounds it plays from
+// outside.
+func TestPresentationUnreadContent(tt *testing.T) {
+	sound := func() []byte { return t.PPTContainer(0x07E6, 0, t.PPTAtom(0x07E7, 0, make([]byte, 8)...)) }
+	deck := pptDeck{
+		doc: [][]byte{
+			t.PPTContainer(0x07E4, 5, t.PPTAtom(0x07E5, 0, t.U32(2)...), sound(), sound()),
+			t.PPTContainer(t.PPTExObjList, 0,
+				t.PPTContainer(0x1006, 0, t.PPTContainer(0x1005, 0, t.PPTAtom(0x1004, 0, make([]byte, 8)...))),
+				t.PPTContainer(0x1010, 0, t.PPTAtom(0x1004, 0, make([]byte, 8)...))),
+		},
+		slides: []pptSlide{{outline: t.PPTText(0, "A slide"), layout: 1,
+			shapes: [][]byte{t.PPTShape{Top: 100, Left: 100, Right: 900, Bottom: 300, Placeholder: 13, OutlineRef: 1}.Bytes()}}},
+	}
+	doc := mustExtract(tt, deck.bytes(), nil)
+	if w, ok := warning(doc.Warnings, gofastcore.WarnInputUnreadContent); !ok || w.Message != "1 video, 3 sounds" || w.Severity != gofastcore.SeverityWarning {
+		tt.Errorf("warnings: %+v", doc.Warnings)
+	}
+	// A presentation with none says nothing of them.
+	deck.doc = nil
+	if _, ok := warning(mustExtract(tt, deck.bytes(), nil).Warnings, gofastcore.WarnInputUnreadContent); ok {
+		tt.Error("a presentation with no sound or video says it has some")
+	}
+}
+
 // A title of very many paragraphs is one heading, and joining them costs
 // no more than their text: not a copy of the heading for every paragraph.
 func TestPresentationLongTitle(tt *testing.T) {

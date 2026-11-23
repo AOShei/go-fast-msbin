@@ -127,7 +127,7 @@ func TestSourceHygiene(t *testing.T) {
 // The packages that read a file work on the bytes they are given and on
 // nothing else: they open no file, start no program and reach no network,
 // because they do not import the packages that would let them. Only the
-// public package opens a file, in ExtractFile.
+// public package opens a file, in Open and ExtractFile.
 func TestReadersImportNothingThatReachesOutside(t *testing.T) {
 	files := imports(t, "internal")
 	for file, paths := range files {

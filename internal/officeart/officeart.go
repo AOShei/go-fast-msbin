@@ -105,7 +105,7 @@ func walk(b []byte, depth int, fn func(r Rec, depth int) bool) {
 	}
 }
 
-// Property identifiers that are read ([MS-ODRAW] 2.3).
+// Property identifiers ([MS-ODRAW] 2.3).
 const (
 	PropTextID       = 0x0080 // lTxid: which text the shape holds
 	PropBlip         = 0x0104 // pib: the picture a shape shows, by its number from 1

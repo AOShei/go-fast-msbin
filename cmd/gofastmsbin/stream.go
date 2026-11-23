@@ -13,9 +13,9 @@ import (
 	"github.com/AOShei/go-fast-msbin"
 )
 
-// streamJSON writes the document f holds as JSON a part at a time, as
-// each is read, so that what is held is about one part and not the whole
-// document. The bytes are those json.Encoder writes for the document read
+// streamJSON writes the document f holds as JSON as its parts are read, a
+// block and a row at a time, so that what is held is about the parts
+// being read and not the whole document. The bytes are those json.Encoder writes for the document read
 // whole (File.Document), with HTML left unescaped and, if indent is set,
 // two spaces to a level; the fields of a document put its parts before
 // its children and warnings, which are known only once the parts have

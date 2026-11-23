@@ -49,7 +49,7 @@ func EqChar(face byte, code uint16, embell ...byte) []byte {
 	return c
 }
 
-// EqText writes the characters of a string in one typeface.
+// EqString writes the characters of a string in one typeface.
 func EqString(face byte, s string) []byte {
 	var out []byte
 	for _, r := range s {

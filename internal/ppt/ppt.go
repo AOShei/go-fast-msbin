@@ -25,7 +25,7 @@ import (
 
 var le = binary.LittleEndian
 
-// Record types that are read ([MS-PPT] 2.13.24).
+// Record types ([MS-PPT] 2.13.24).
 const (
 	rtDocument            = 0x03E8
 	rtDocumentAtom        = 0x03E9
@@ -95,8 +95,8 @@ type Config struct {
 	// CurrentEdit is where the Current User stream says the last edit
 	// is in the PowerPoint Document stream.
 	CurrentEdit uint32
-	// Child hands an embedded object on, as a file: its name and its
-	// bytes. It returns the document made of it.
+	// Stored reads into the stored part what the file stores besides
+	// what this reader finds (the source of its macros), or is nil.
 	Stored func(ctx context.Context, part *stored.Part)
 	// Chart reads the compound file of a Microsoft Graph chart into the
 	// blocks of the chart, or reports that it is none. cut says the text
@@ -773,7 +773,9 @@ func (d *Deck) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 }
 
 // Objects returns the embedded objects of the presentation as files: for
-// each, its number and the compound file that holds it. What they expand
+// each, its number and the compound file that holds it. Left out are
+// those read elsewhere: the VBA project, Microsoft Graph charts, and
+// equations that can be read. What they expand
 // to is taken from the decode budget in ctx; an object over it is given
 // with no bytes.
 func (d *Deck) Objects(ctx context.Context) (ids []uint32, files [][]byte, limited bool) {

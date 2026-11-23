@@ -113,8 +113,6 @@ type sheet struct {
 	linkAt          map[pos]string
 	links           []link
 
-	// Comments: the notes, and the text of the drawing objects they
-	// name.
 	// What floats over the sheet (drawing.go, chart.go).
 	shape      shape
 	floating   []grid.Placed
@@ -136,6 +134,8 @@ type sheet struct {
 	lists      []choiceList
 	listRanges int // the ranges of all of them
 
+	// Comments: the notes, and the text of the drawing objects they
+	// name.
 	notes    []comment
 	noteText map[uint16]string
 	objID    uint16
@@ -661,8 +661,8 @@ func (sh *sheet) number(row, col int32, style *cellStyle, v float64) bool {
 	return sh.add(row, col, sh.text.put(out), hidden, kind, value)
 }
 
-// add keeps a cell. It reports false, having dropped the row the cell is
-// in, where a limit was reached.
+// add keeps a cell. It reports false, having kept neither the cell nor
+// the row before its own, where that row met a limit.
 func (sh *sheet) add(row, col int32, text string, hidden gofastcore.Display, kind gofastcore.CellType, value string) bool {
 	if text == "" {
 		return true

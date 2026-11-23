@@ -806,7 +806,7 @@ func tableOf(cells []item) item {
 }
 
 // drawingOf returns the records of the drawing of a slide or a notes
-// page, and the slide's own records beside it.
+// page.
 func drawingOf(container officeart.Rec) (drawing []byte) {
 	b := container.Body
 	for {

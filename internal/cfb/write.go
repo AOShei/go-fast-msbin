@@ -10,7 +10,8 @@ import (
 )
 
 // Node is a storage or a stream of a compound file to be written. A node
-// with Children is a storage; any other is a stream holding Data.
+// that says it is a storage, or that has Children, is a storage; any
+// other is a stream holding Data.
 type Node struct {
 	Name     string
 	Storage  bool

@@ -34,10 +34,12 @@ const (
 // the codes all go-fast libraries share, which are in gofastcore. Besides
 // the ones about parts, limits and embedded documents it raises:
 //
-//	input.active_content             the file contains a VBA project, or
-//	                                 an action that runs a program
+//	input.active_content             the file contains a VBA project,
+//	                                 macro sheets, or an action that runs
+//	                                 a program
 //	input.external_reference         an embedded object is a link to a
-//	                                 file outside the document
+//	                                 file outside the document, or a
+//	                                 workbook refers to another
 //	input.repaired                   the compound file or a stream of it
 //	                                 is damaged, and was read as far as it
 //	                                 could be

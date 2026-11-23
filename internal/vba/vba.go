@@ -1,6 +1,6 @@
 // Package vba reads the source code of a VBA project: the modules of
-// macros a macro-enabled Office file carries in its vbaProject.bin, a
-// compound file. It is written from the format's published description,
+// macros an Office file carries in a storage of its compound file (a
+// presentation, in a compound file of its own within its stream). It is written from the format's published description,
 // [MS-OVBA]. The code is read as text. Nothing in it is run.
 //
 // A project keeps each module's source compressed, after a cache of

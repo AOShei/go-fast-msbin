@@ -1,12 +1,11 @@
 // Package chart turns the data of a chart into blocks, as go-fast-ooxml
-// does: the names of its series, its categories and its values, as the
-// chart's cache holds them, given as a table, with the chart's title as a
-// caption before it and its type and the titles of its axes as
-// attributes (gofastcore.RoleChart).
+// does: the names of its series, its categories and its values, given as
+// a table, with the chart's title as a caption before it and its type and
+// the titles of its axes as attributes (gofastcore.RoleChart).
 //
-// The cache is what the chart was drawn from when it was saved; the
-// sheet it was taken from may say something else now, and is not
-// consulted.
+// The data is what the caller gives: the workbook reader gives the cells
+// a series names, as the sheet shows them, and what the chart itself
+// keeps from when it was last drawn where a series names none.
 package chart
 
 import (

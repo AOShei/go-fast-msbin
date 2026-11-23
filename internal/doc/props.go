@@ -61,7 +61,7 @@ func eachSprm(grpprl []byte, fn func(op uint16, arg []byte) bool) {
 	}
 }
 
-// The changes that are read.
+// The changes: those that are read, and some beside them.
 const (
 	sprmPIlvl           = 0x260A
 	sprmPIlfo           = 0x460B

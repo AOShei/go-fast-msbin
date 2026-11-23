@@ -19,8 +19,10 @@ import (
 // A chart is a substream of records of its own ([MS-XLS] 2.1.7.20.1): a
 // chart sheet's, or inside a worksheet's after the object that places it.
 // What is read is what go-fast-ooxml reads of a chart: its type, the
-// titles of the chart and its axes, the names of its series, and the
-// categories and values the chart keeps from when it was last drawn.
+// titles of the chart and its axes, the names of its series, and its
+// categories and values: the cells a series names, as the sheet shows
+// them, or what the chart keeps from when it was last drawn where a
+// series names none or the cells are not this workbook's.
 
 // Records of a chart that are read.
 const (

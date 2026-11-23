@@ -3,8 +3,9 @@
 //
 // The reader is copied from go-fast-email (internal/cfb), which copied it
 // from go-fast-ooxml, by the same author and under the same licence; the
-// class identifier of a storage, Write and Export are added here. See
-// NOTICE.
+// class identifier of a storage, Write and Export, Stream.Whole, and
+// reading on past a wrong byte-order mark and a directory whose chain
+// breaks are added here. See NOTICE.
 //
 // A compound file is a small file system: storages (directories) and
 // streams (files), kept in sectors of fixed size that are chained

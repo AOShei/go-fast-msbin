@@ -27,8 +27,8 @@ func sameNumber(a, b string) bool {
 
 // TestAgainstLibreOffice holds the engine to what LibreOffice displays for
 // every pair of a table of formats and values. The table is kept in
-// testdata/numfmt/libreoffice.tsv; the test that checks the table itself
-// against LibreOffice is in the root package.
+// testdata/numfmt/libreoffice.tsv, as go-fast-ooxml has it; the test that
+// checks the table itself against LibreOffice is in that library.
 func TestAgainstLibreOffice(t *testing.T) {
 	f, err := os.Open("../../testdata/numfmt/libreoffice.tsv")
 	if err != nil {

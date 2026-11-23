@@ -991,7 +991,7 @@ func (d *Deck) slide(ctx context.Context, index int) *unit.Result {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, warn.TextCut("slide"))
 	}
 	if s.budget {
-		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached; pictures from there on are named and not read, and charts are not read")
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the decompressed size limit was reached; pictures from there on are named and not read, and charts and equations are not read")
 	}
 	capped := s.lost.Say(&part)
 	hasText, hasImage := false, s.sawImage

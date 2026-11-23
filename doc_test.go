@@ -197,6 +197,15 @@ func TestWordEquations(tt *testing.T) {
 	}
 	if len(doc.Children) != 1 || len(handed) != 1 || !strings.HasPrefix(handed[0], "_1003") {
 		tt.Errorf("embedded files: %d, handed on %v", len(doc.Children), handed)
+	} // An equation in a footnote, with a character Unicode has nothing
+	// for: it is counted with those of the text.
+	note := para("\x02 See ", 1004, ".")
+	streams = t.WordStreams(t.DocFile{Styles: docStyles, Main: []t.DocPara{{Text: "A claim.\x02"}}, Footnotes: [][]t.DocPara{{note}}})
+	streams["ObjectPool/_1004/Equation Native"] = t.EquationNative(t.MTEF3(t.EqLine(t.EqString(t.EqVariable, "a"), t.EqChar(t.EqSymbol, 0xE123))))
+	doc = mustExtract(tt, t.Compound(streams), nil)
+	wantLines(tt, "an equation in a footnote", lines(&doc.Parts[0]), []string{"paragraph A claim.", "footnote[1] See a\uFFFD. EMBED Equation.3"})
+	if w, ok := warning(doc.Parts[0].Warnings, gofastcore.WarnTextUnmappedGlyphs); !ok || !strings.HasPrefix(w.Message, "1 characters of equations") {
+		tt.Errorf("warnings: %+v", doc.Parts[0].Warnings)
 	}
 }
 

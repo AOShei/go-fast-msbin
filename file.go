@@ -606,19 +606,31 @@ func (f *File) hand(ctx context.Context, limited bool) ([]*gofastcore.Document, 
 	sess := f.sess
 	f.mu.Unlock()
 	if deck, ok := sess.src.(*ppt.Deck); ok {
-		ids, files, limited := deck.Objects(ctx)
+		handing := read && f.opts.Child != nil
+		objects, limited := deck.Objects(ctx, handing)
 		res.Limited = res.Limited || limited
-		for i, data := range files {
-			name, mime := "object"+strconv.FormatUint(uint64(ids[i]), 10), "application/x-ole-storage"
-			if cf, err := cfb.Open(bytes.NewReader(data), int64(len(data))); err == nil {
-				if in := detect.Compound(cf); in.Format != "" {
-					name, mime = name+"."+in.Format, detect.MIME(in.Format)
+		for _, o := range objects {
+			name, mime := "object"+strconv.FormatUint(uint64(o.ID), 10), "application/x-ole-storage"
+			// What it is, from the streams it holds. An object that is
+			// only listed is expanded no further than that takes.
+			var content io.ReaderAt
+			switch {
+			case o.Data != nil:
+				content = bytes.NewReader(o.Data)
+			case o.Peek != nil:
+				content = o.Peek
+			}
+			if content != nil {
+				if cf, err := cfb.Open(content, o.Size); err == nil {
+					if in := detect.Compound(cf); in.Format != "" {
+						name, mime = name+"."+in.Format, detect.MIME(in.Format)
+					}
 				}
 			}
-			if data == nil || !read || f.opts.Child == nil {
-				res.Children = append(res.Children, f.opts.ExtractChild(ctx, name, mime, nil, int64(len(data))))
+			if o.Data == nil || !handing {
+				res.Children = append(res.Children, f.opts.ExtractChild(ctx, name, mime, nil, o.Size))
 			} else {
-				res.Children = append(res.Children, f.opts.ExtractChild(ctx, name, mime, bytes.NewReader(data), int64(len(data))))
+				res.Children = append(res.Children, f.opts.ExtractChild(ctx, name, mime, bytes.NewReader(o.Data), o.Size))
 			}
 		}
 	}

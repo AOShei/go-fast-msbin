@@ -784,10 +784,10 @@ func tableOf(cells []item) item {
 		i := sort.Search(len(v), func(i int) bool { return v[i] > x+0.5 })
 		return max(i-1, 0)
 	}
-	rows := make([][]string, len(ys))
-	for i := range rows {
-		rows[i] = make([]string, len(xs))
-	}
+	// The text of each cell is that of every shape that lies in it, one
+	// after another on lines of their own. The texts are gathered and
+	// then joined once: shapes can lie in one cell by the thousand.
+	texts := make([][]string, len(ys)*len(xs))
 	for _, c := range cells {
 		if len(c.paras) == 0 || !c.placed {
 			continue
@@ -796,11 +796,19 @@ func tableOf(cells []item) item {
 		for _, p := range c.paras {
 			parts = append(parts, p.text)
 		}
-		cell := &rows[find(ys, c.at.y0)][find(xs, c.at.x0)]
-		if *cell != "" {
-			*cell += "\n"
+		at := find(ys, c.at.y0)*len(xs) + find(xs, c.at.x0)
+		// A shape with no text before the first that has some adds no
+		// line.
+		if text := strings.Join(parts, "\n"); text != "" || len(texts[at]) > 0 {
+			texts[at] = append(texts[at], text)
 		}
-		*cell += strings.Join(parts, "\n")
+	}
+	rows := make([][]string, len(ys))
+	for i := range rows {
+		rows[i] = make([]string, len(xs))
+		for k := range rows[i] {
+			rows[i][k] = strings.Join(texts[i*len(xs)+k], "\n")
+		}
 	}
 	return item{at: at, placed: true, placeholder: -1, textKind: -1, rows: rows}
 }
@@ -1098,7 +1106,8 @@ func (s *slideReader) emit(part *gofastcore.Part, it *item, title bool) {
 		it.placeholder < 0 && (it.textKind == textBody || it.textKind == textCenterBody || it.textKind == textHalfBody || it.textKind == textQuarterBody):
 		body = true
 	}
-	var count, scheme [9]int // the numbers of the numbered paragraphs, by level
+	var count, scheme [9]int   // the numbers of the numbered paragraphs, by level
+	var joined strings.Builder // a title of several paragraphs, as it is joined
 	for i, p := range it.paras {
 		if !s.take(gofastcore.BlockCost + len(p.text)) {
 			return
@@ -1106,9 +1115,17 @@ func (s *slideReader) emit(part *gofastcore.Part, it *item, title bool) {
 		b := gofastcore.Block{Kind: kind, Level: level, Text: p.text, Spans: p.spans}
 		if kind == gofastcore.KindHeading && i > 0 {
 			// A title of several paragraphs: one heading, on several lines.
+			// The text is joined in one place that grows: a title of
+			// many paragraphs is not copied once for each.
 			last := &part.Blocks[len(part.Blocks)-1]
 			at := len(last.Text) + 1
-			last.Text += "\n" + p.text
+			if joined.Len() != len(last.Text) {
+				joined.Reset()
+				joined.WriteString(last.Text)
+			}
+			joined.WriteByte('\n')
+			joined.WriteString(p.text)
+			last.Text = joined.String()
 			for _, sp := range p.spans {
 				sp.Start, sp.End = sp.Start+at, sp.End+at
 				last.Spans = append(last.Spans, sp)

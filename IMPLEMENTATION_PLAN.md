@@ -510,6 +510,34 @@ Andrew asked for the shortfalls of the list above to be made good before the rel
 
 - **Shared warning codes** (core v0.1.2, `CORE_TO_MSBIN_SHARED_CODES.md`, 2026-11-23). The six codes this library had of its own are core's now: `msbin.control_characters_removed` is `text.control_characters_removed`, `msbin.unread_content` `input.unread_content`, `msbin.part_damaged` and `msbin.properties_damaged` `input.stream_damaged` (for the properties the message names the stream), `msbin.region_split` `table.region_split`, `msbin.decrypted` `input.decrypted`. The five exported constants are gone; the library exports no warning code. Checked over the corpus with the command before and after: of 2,528 files, 2,438 give the same JSON but for these codes and the message of the properties, 90 are refused by both, none differs otherwise. The command requires go-fast-ooxml v0.2.0, which raises the same codes, so a `.docx`, `.xlsx` or `.pptx` embedded in a document warns as the document does.
 
+### After v0.1.0: a sweep, and speed (2026-11-23)
+
+**The sweep.** Every source file, the documents and the comments of the tests were read against the code by three reviewers, each finding checked before anything was changed: about forty statements corrected, three unused declarations removed, and two defects fixed (the count of unmapped characters of equations outside the main text; a warning's wording).
+
+**Benchmarks**, new: `BenchmarkCorpus*` reads every file of one format one after another, as a batch of ordinary files is read (the large generated files are measured apart, as before). On a quiet machine, before any change:
+
+| Batch | Files, size | All workers | One worker | Others |
+|---|---|---|---|---|
+| `.xls` | 1,111, 413 MB | 1.09 s | 1.28 to 1.37 s | calamine 2.9 s, xlrd 11.3 s (for the files each reads, in Python) |
+| `.doc` | 907, 207 MB | 0.20 s | | LibreOffice: 2.2 s a file |
+| `.ppt` | 510, 382 MB | 0.45 s | 0.48 to 0.49 s | LibreOffice: 2.2 s a file |
+
+What the profiles showed, and what was done:
+
+- **Presentations: 58% of the time went to expanding embedded objects that were only going to be listed** (no `Options.Child`). They are now expanded only as far as it takes to read their directory, which says what they are; an object that is handed on is expanded into room made beforehand from the size it states. A compound file's allocation table can lie anywhere in it, so about half of the bytes are still expanded. One file of the corpus changes: a damaged one, whose two truncated objects are now listed with the size they state and not the size that could be expanded.
+- **Joining text by copying** (found in the Word profile, where one file of 0.4 MB took 22 ms): see the changelog. `TestWordLongRunOfCode` and `TestPresentationLongTitle` hold the two that a file can make arbitrarily long.
+- **Workbooks**: the text of a sheet's cells was kept in pieces of 256 KiB from the first, which for a workbook of many small sheets was most of what it allocated (pieces now grow from 4 KiB); a sheet's records were read into two allocations (now one); the list of cells grows by what the rest of the sheet is expected to hold; the fifteen digits of a whole number or of one with up to four decimals are found without the general conversion, with the same digits (`TestShortDigitsAreTheLongDigits`, some fifty million numbers against the long way).
+
+| Batch | All workers | One worker | Allocated |
+|---|---|---|---|
+| `.xls` | 0.91 s (was 1.09) | 1.12 s (was 1.28 to 1.37) | 2.96 GB (was 3.93) |
+| `.doc` | 0.18 s (was 0.20) | | 0.42 GB (was 0.61) |
+| `.ppt` | 0.30 s (was 0.45) | 0.36 s (was 0.48 to 0.49) | 0.84 GB (was 1.01) |
+
+The large files are as they were (`large.xls` 0.05 s, `large.doc` 0.06 s, `large.ppt` 0.007 s). The documents are byte for byte the same for all 2,528 files under four settings, but for the one file above.
+
+What is left, by the profile of the workbooks: placing cells into tables (23%, bound by memory), number formats (17%), clearing and copying large allocations (15%).
+
 **To release:** merge the open pull requests in order; date the changelog (`[0.1.0] - <date>`) in a pull request of its own; tag `v0.1.0` on `main`. The tag is Andrew's.
 
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).

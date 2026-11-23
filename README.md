@@ -219,6 +219,7 @@ python3 testdata/oracle_lo.py testdata testdata/corpus/twins-ppt --twin --format
 go test -run 'TestPptTwins|TestEquationTwins' -v .
 go test -run 'TestCellsAgainstXlrd|TestShownAgainstLibreOffice|TestTwins|TestFormulasAgainstTwins' -v .
 go test -run '^$' -bench Large .                                               # needs bench/baseline.py generate
+go test -run '^$' -bench Corpus .                                              # every file of a format, as a batch
 go test -run 'TestSoak|TestAllocationBudgets' -v .                             # the whole corpus four ways; what the large files allocate
 go test -run TestWorkbookRegions -v .                                          # every workbook read both ways: its stream in memory, a sheet at a time
 go run ./cmd/gofastmsbin file.doc

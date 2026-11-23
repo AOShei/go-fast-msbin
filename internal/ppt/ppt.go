@@ -698,6 +698,10 @@ func (d *Deck) slideList(list officeart.Rec) {
 	end(b)
 }
 
+// maxExpect bounds the room made beforehand for an object that says how
+// large it is: a record can say anything.
+const maxExpect = 64 << 20
+
 // storage returns the compound file an ExOleObjStg record holds, which
 // is kept compressed where the record's instance says so. limit bounds
 // what it may expand to; ok is false where it is over, or cannot be read.
@@ -717,11 +721,16 @@ func (d *Deck) storage(id uint32, limit int64) (data []byte, compressed, ok bool
 		return nil, true, false
 	}
 	defer zr.Close()
-	out, err := io.ReadAll(io.LimitReader(zr, limit+1))
-	if int64(len(out)) > limit || err != nil && len(out) == 0 {
+	// Room for what the record says it expands to, where that is
+	// within the limit, so that the bytes are not copied as they grow.
+	// The limit is what is left of a budget, which may be overdrawn.
+	room := max(min(int64(le.Uint32(r.Body)), limit, maxExpect), 0)
+	out := bytes.NewBuffer(make([]byte, 0, room+bytes.MinRead))
+	_, err = out.ReadFrom(io.LimitReader(zr, limit+1))
+	if int64(out.Len()) > limit || err != nil && out.Len() == 0 {
 		return nil, true, false
 	}
-	return out, true, true
+	return out.Bytes(), true, true
 }
 
 // Len returns the number of parts: the slides, one part for a
@@ -772,13 +781,26 @@ func (d *Deck) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 	return append(out, unit.Summarize(tallies, d.damaged)...)
 }
 
-// Objects returns the embedded objects of the presentation as files: for
-// each, its number and the compound file that holds it. Left out are
-// those read elsewhere: the VBA project, Microsoft Graph charts, and
-// equations that can be read. What they expand
-// to is taken from the decode budget in ctx; an object over it is given
-// with no bytes.
-func (d *Deck) Objects(ctx context.Context) (ids []uint32, files [][]byte, limited bool) {
+// Object is an embedded object of a presentation, as a file: a compound
+// file. Data holds it whole. Where it is only to be listed it may not
+// have been expanded: then Data is nil and Peek reads it, expanding as
+// much of it as is read, and Size is what it says it expands to. An
+// object with neither could not be read, or is over what the document
+// may expand.
+type Object struct {
+	ID   uint32
+	Data []byte
+	Peek io.ReaderAt
+	Size int64
+}
+
+// Objects returns the embedded objects of the presentation as files.
+// Left out are those read elsewhere: the VBA project, Microsoft Graph
+// charts, and equations that can be read. What they expand to is taken
+// from the decode budget in ctx; an object over it is given with no
+// bytes. With read false the objects are to be listed and not handed on,
+// and a compressed one is expanded only as far as it is looked at.
+func (d *Deck) Objects(ctx context.Context, read bool) (objects []Object, limited bool) {
 	decoded := gofastcore.DecodeBudgetFrom(ctx)
 	seen := map[uint32]bool{}
 	list := append([]uint32(nil), d.objects...)
@@ -792,6 +814,20 @@ func (d *Deck) Objects(ctx context.Context) (ids []uint32, files [][]byte, limit
 		if decoded != nil {
 			left = decoded.Left()
 		}
+		if !read && !d.equations[id] {
+			if o, compressed, ok := d.peek(id, left); ok {
+				if compressed && !decoded.Take(o.Size) {
+					limited = true
+					o = Object{ID: id}
+				}
+				objects = append(objects, o)
+				continue
+			} else if compressed {
+				limited = true
+			}
+			objects = append(objects, Object{ID: id})
+			continue
+		}
 		data, compressed, ok := d.storage(id, left)
 		if !ok || compressed && !decoded.Take(int64(len(data))) {
 			limited = limited || compressed
@@ -803,9 +839,68 @@ func (d *Deck) Objects(ctx context.Context) (ids []uint32, files [][]byte, limit
 				continue
 			}
 		}
-		ids, files = append(ids, id), append(files, data)
+		objects = append(objects, Object{ID: id, Data: data, Size: int64(len(data))})
 	}
-	return ids, files, limited
+	return objects, limited
+}
+
+// peek returns the object an ExOleObjStg record holds without expanding
+// a compressed one: it is expanded as it is read. ok is false where it
+// says it expands to more than limit, or nothing of it can be expanded.
+func (d *Deck) peek(id uint32, limit int64) (o Object, compressed, ok bool) {
+	r, found := d.object(id)
+	if !found || r.Type != rtExOleObjStg {
+		return Object{}, false, false
+	}
+	if r.Inst != 1 {
+		return Object{ID: id, Data: r.Body, Size: int64(len(r.Body))}, false, true
+	}
+	if len(r.Body) < 4 {
+		return Object{}, true, false
+	}
+	size := int64(le.Uint32(r.Body))
+	zr, err := zlib.NewReader(bytes.NewReader(r.Body[4:]))
+	if err != nil || size > limit {
+		return Object{}, true, false
+	}
+	l := &lazy{zr: zr, size: size}
+	// The first of it: an object of which nothing expands is none.
+	var first [1]byte
+	if n, _ := l.ReadAt(first[:], 0); n == 0 {
+		return Object{}, true, false
+	}
+	return Object{ID: id, Peek: l, Size: size}, true, true
+}
+
+// lazy reads a compressed object, expanding it as far as it is read and
+// no further. It is read by one goroutine.
+type lazy struct {
+	zr   io.Reader
+	buf  []byte
+	size int64 // what the object says it expands to
+	done bool
+}
+
+func (l *lazy) ReadAt(p []byte, off int64) (int, error) {
+	end := min(off+int64(len(p)), l.size)
+	for int64(len(l.buf)) < end && !l.done {
+		have := int64(len(l.buf))
+		more := min(max(end-have, 64<<10), l.size-have)
+		l.buf = append(l.buf, make([]byte, more)...)
+		n, err := io.ReadFull(l.zr, l.buf[have:])
+		l.buf = l.buf[:have+int64(n)]
+		if err != nil {
+			l.done = true
+		}
+	}
+	if off < 0 || off >= int64(len(l.buf)) {
+		return 0, io.EOF
+	}
+	n := copy(p, l.buf[off:])
+	if n < len(p) {
+		return n, io.EOF
+	}
+	return n, nil
 }
 
 // Read reads the slide with the given index into a part.

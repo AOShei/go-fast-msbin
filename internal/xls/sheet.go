@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,22 +18,29 @@ import (
 	"github.com/AOShei/go-fast-msbin/internal/warn"
 )
 
-// arena holds the text of a sheet's cells in large pieces, so that a cell
+// arena holds the text of a sheet's cells in pieces, so that a cell
 // costs no allocation of its own. A piece is never moved once text has
-// been cut from it.
+// been cut from it. The pieces grow from small to large: most sheets are
+// small, and a large piece for each would be most of what a workbook of
+// many small sheets allocates.
 type arena struct {
-	b strings.Builder
+	b    strings.Builder
+	next int // the size of the next piece
 }
 
-const arenaPiece = 256 << 10
+const (
+	arenaFirst = 4 << 10
+	arenaPiece = 256 << 10
+)
 
 func (a *arena) put(p []byte) string {
 	if len(p) == 0 {
 		return ""
 	}
 	if a.b.Cap()-a.b.Len() < len(p) {
+		a.next = min(max(2*a.next, arenaFirst), arenaPiece)
 		a.b = strings.Builder{}
-		a.b.Grow(max(arenaPiece, len(p)))
+		a.b.Grow(max(a.next, len(p)))
 	}
 	start := a.b.Len()
 	a.b.Write(p)
@@ -63,12 +71,13 @@ type comment struct {
 // nothing that changes with the others, apart from the workbook's
 // budgets.
 type sheet struct {
-	b    *Book
-	ctx  context.Context
-	part gofastcore.Part
-	g    grid.Sheet
-	c    cursor
-	size int // the bytes of the sheet's records, at most
+	b     *Book
+	ctx   context.Context
+	part  gofastcore.Part
+	g     grid.Sheet
+	c     cursor
+	size  int // the bytes of the sheet's records, at most
+	start int // where its records begin in the cursor's data
 
 	lost   warn.Lost
 	capped bool
@@ -247,6 +256,7 @@ func (sh *sheet) result() *unit.Result {
 // to its EOF.
 func (sh *sheet) read(at int) {
 	c := &sh.c
+	sh.start = at
 	typ, ok := c.record(at)
 	if !ok || typ != recBOF {
 		sh.notSheet = true
@@ -661,6 +671,20 @@ func (sh *sheet) number(row, col int32, style *cellStyle, v float64) bool {
 	return sh.add(row, col, sh.text.put(out), hidden, kind, value)
 }
 
+// room4cells makes room for the cells still to come, where the room made
+// at the start was not enough: as many as the rest of the sheet's records
+// would hold at the size the cells read so far have had, so that the
+// list is not copied again and again as it grows.
+func (sh *sheet) room4cells() {
+	n := len(sh.g.Cells)
+	more := n/4 + 16
+	if read := sh.c.next - sh.start; n > 0 && read > 0 && sh.size > read {
+		rest := int64(sh.size-read) * int64(n) / int64(read)
+		more = int(min(max(rest+rest/16, int64(more)), maxReserve))
+	}
+	sh.g.Cells = slices.Grow(sh.g.Cells, more)
+}
+
 // add keeps a cell. It reports false, having kept neither the cell nor
 // the row before its own, where that row met a limit.
 func (sh *sheet) add(row, col int32, text string, hidden gofastcore.Display, kind gofastcore.CellType, value string) bool {
@@ -695,6 +719,9 @@ func (sh *sheet) add(row, col int32, text string, hidden gofastcore.Display, kin
 	}
 	sh.last = at
 	sh.rowBytes += int64(len(text))
+	if len(sh.g.Cells) == cap(sh.g.Cells) {
+		sh.room4cells()
+	}
 	sh.g.Cells = append(sh.g.Cells, grid.Cell{Text: text, Row: row, Col: col, Hidden: hidden})
 	if kind != gofastcore.CellUnset && sh.b.opts != nil && sh.b.opts.Cells {
 		if n := len(sh.details); n > 0 && !before(sh.details[n-1].at, at) {

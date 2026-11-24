@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-24
+
 ### Changed
 
 - The command requires `go-fast-ooxml` v0.5.0 (was v0.3.0), and with it

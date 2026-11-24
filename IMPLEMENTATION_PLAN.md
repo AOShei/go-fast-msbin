@@ -159,7 +159,7 @@ internal/officeart        shapes, properties, anchors, pictures, text boxes: all
 internal/biff             records, CONTINUE joining, strings
 internal/xls              the Excel reader
 internal/ptg              compiled formulas back to text (BIFF8, BIFF5)
-internal/numfmt           number formats (from go-fast-ooxml)
+internal/numfmt           number formats (from go-fast-ooxml; go-fast-core's numfmt since core v0.1.7)
 internal/doc              the Word reader: FIB, piece table, properties, styles, lists, stories
 internal/ppt              the PowerPoint reader: edits, persist directory, slides, text, masters
 internal/vba, codepage, symbol, label, clean, hidden, warn   copied
@@ -596,3 +596,5 @@ After the release, each library's owner decides whether its command routes embed
 - **No Microsoft-written fixtures of our own.** Everything Office-made comes from other projects' test suites, which lean towards bug reports rather than ordinary documents. The data.gov.uk sample is the counterweight.
 - **Specifications from memory.** The formats are read from the published [MS-DOC], [MS-XLS], [MS-PPT], [MS-ODRAW], [MS-OLEPS] and [MS-OFFCRYPTO]. Where a detail cannot be confirmed against a real file or an oracle, the reader refuses or counts rather than guesses, and the README says what was checked against what.
 - **LibreOffice as oracle** hangs on some hostile files and once wrote 180 GB: it runs contained, always.
+
+**The number-format engine is core's** (2026-11-24; `MSBIN_TO_CORE_NUMFMT.md`, `CORE_TO_MSBIN_OOXML_NUMFMT.md`). The engine was go-fast-ooxml's, with a copy here that had to be brought back to it by hand twice. It is now `github.com/AOShei/go-fast-core/numfmt` (core v0.1.7), and `internal/xls` imports it; `internal/numfmt` and `testdata/numfmt` are gone. Core's two source files are this library's but for one comment line; its table, its tests and its fuzz inputs are the same. The command's output over the 8,067 files of the corpus is byte for byte the same before and after. Making the engine faster (a cache of recent results that the calling library holds and sizes) is done in core, once, and measured here and in go-fast-ooxml.

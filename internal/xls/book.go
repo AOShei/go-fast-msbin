@@ -12,8 +12,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/numfmt"
 	"github.com/AOShei/go-fast-msbin/internal/clean"
-	"github.com/AOShei/go-fast-msbin/internal/numfmt"
 	"github.com/AOShei/go-fast-msbin/internal/officeart"
 	"github.com/AOShei/go-fast-msbin/internal/ptg"
 	"github.com/AOShei/go-fast-msbin/internal/stored"

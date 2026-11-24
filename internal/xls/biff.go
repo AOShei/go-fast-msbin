@@ -85,7 +85,7 @@ type cursor struct {
 
 // bytes reads a string of cch bytes in the cursor's code page.
 func (c *cursor) bytes(dst []byte, cch int) ([]byte, bool) {
-	c.tmp = c.tmp[:0]
+	c.tmp = reuse(c.tmp)
 	ok := true
 	for cch > 0 {
 		if len(c.b) == 0 {
@@ -254,7 +254,7 @@ func (c *cursor) chars(dst []byte, cch int, wide bool) (out []byte, ok bool) {
 // [MS-XLS] 2.5.294): the count of characters, a byte of flags, the
 // characters.
 func (c *cursor) str(dst []byte) ([]byte, bool) {
-	c.runs = c.runs[:0]
+	c.runs = reuseRuns(c.runs)
 	if c.cp != 0 {
 		if len(c.b) < 2 {
 			return dst, false
@@ -274,7 +274,7 @@ func (c *cursor) str(dst []byte) ([]byte, bool) {
 // shortStr reads a string whose length is in 8 bits (ShortXLUnicodeString,
 // [MS-XLS] 2.5.240).
 func (c *cursor) shortStr(dst []byte) ([]byte, bool) {
-	c.runs = c.runs[:0]
+	c.runs = reuseRuns(c.runs)
 	if c.cp != 0 {
 		if len(c.b) < 1 {
 			return dst, false
@@ -295,6 +295,24 @@ func (c *cursor) shortStr(dst []byte) ([]byte, bool) {
 // 16-bit units, the text is in the font with the number font.
 type run struct{ at, font uint16 }
 
+// reuse returns b emptied, to be written again. What it held is not to
+// be read after: with the xlsscratchpoison tag it is overwritten, so
+// that a test fails for a reader that does.
+func reuse(b []byte) []byte {
+	if poison {
+		fill(b[:cap(b)])
+	}
+	return b[:0]
+}
+
+// reuseRuns is reuse for the runs of a string.
+func reuseRuns(r []run) []run {
+	if poison {
+		fillRuns(r[:cap(r)])
+	}
+	return r[:0]
+}
+
 // rich reads the rest of a string after its count and flags: the counts
 // of formatting runs and of the bytes of phonetic data, if the flags say
 // it has them, the characters, and then those runs and that data. The
@@ -303,7 +321,7 @@ type run struct{ at, font uint16 }
 // c.keepRuns asks for them, and passed over otherwise.
 func (c *cursor) rich(dst []byte, cch int, flags byte) ([]byte, bool) {
 	const fHighByte, fExtSt, fRichSt = 0x01, 0x04, 0x08
-	c.runs = c.runs[:0]
+	c.runs = reuseRuns(c.runs)
 	var runs, ext int64
 	if flags&fRichSt != 0 {
 		if len(c.b) < 2 {

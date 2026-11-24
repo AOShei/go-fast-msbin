@@ -385,7 +385,7 @@ func (sh *sheet) record(typ uint16) bool {
 			break
 		}
 		sh.strWait = false
-		raw, _ := c.str(sh.raw[:0])
+		raw, _ := c.str(reuse(sh.raw))
 		sh.raw = raw
 		sh.formula = sh.strFormula
 		return sh.str(sh.strAt.row, sh.strAt.col, sh.strStyle, sh.cellText(raw), gofastcore.CellText)
@@ -396,7 +396,7 @@ func (sh *sheet) record(typ uint16) bool {
 	case recLabel, recRString:
 		if row, col, style, ok := cell(9); ok {
 			c.b = b[6:]
-			raw, _ := c.str(sh.raw[:0])
+			raw, _ := c.str(reuse(sh.raw))
 			sh.raw = raw
 			return sh.str(row, col, style, sh.cellText(raw), gofastcore.CellUnset)
 		}
@@ -526,10 +526,10 @@ func (sh *sheet) record(typ uint16) bool {
 			var raw []byte
 			if sh.b.biff5 {
 				c.b = b[44:]
-				raw, _ = c.bytes(sh.raw[:0], cch)
+				raw, _ = c.bytes(reuse(sh.raw), cch)
 			} else {
 				c.b = b[45:]
-				raw, _ = c.chars(sh.raw[:0], cch, b[44]&1 != 0)
+				raw, _ = c.chars(reuse(sh.raw), cch, b[44]&1 != 0)
 			}
 			sh.raw = raw
 			name, removed := clean.String(raw, clean.Prose)
@@ -564,7 +564,7 @@ func (sh *sheet) cellText(raw []byte) string {
 	if clean.Plain(raw) {
 		return sh.text.put(bytes.TrimSpace(raw))
 	}
-	out, removed := clean.Append(sh.out[:0], raw, clean.Ligatures)
+	out, removed := clean.Append(reuse(sh.out), raw, clean.Ligatures)
 	sh.out = out
 	sh.removed += removed
 	return sh.text.put(bytes.TrimSpace(out))
@@ -579,12 +579,12 @@ func (sh *sheet) str(row, col int32, style *cellStyle, text string, kind gofastc
 	var hidden gofastcore.Display
 	if style.symbol != symbol.None {
 		var missing int
-		sh.sym, missing = style.symbol.Translate(sh.sym[:0], []byte(text))
+		sh.sym, missing = style.symbol.Translate(reuse(sh.sym), []byte(text))
 		sh.unmapped += missing
 		text = sh.text.put(sh.sym)
 	}
 	if !style.format.PlainText() {
-		out, result := style.format.Text(sh.out[:0], text)
+		out, result := style.format.Text(reuse(sh.out), text)
 		sh.out = out
 		text, hidden = sh.text.put(bytes.TrimSpace(out)), blank(result)
 	}
@@ -601,7 +601,7 @@ func (sh *sheet) sharedStr(row, col int32, style *cellStyle, index uint32) bool 
 	// A string that changes font partway: the cell's font up to the first
 	// change, and each run's font from there. A piece in a symbol font is
 	// codes of that font.
-	out := sh.sym[:0]
+	out := reuse(sh.sym)
 	at, font := 0, style.symbol
 	for i := 0; i <= len(runs); i++ {
 		end := len(text)
@@ -638,7 +638,7 @@ func blank(r numfmt.Result) gofastcore.Display {
 // number adds a cell that holds a number, as its format shows it.
 func (sh *sheet) number(row, col int32, style *cellStyle, v float64) bool {
 	var hidden gofastcore.Display
-	out := sh.out[:0]
+	out := reuse(sh.out)
 	kind := gofastcore.CellNumber
 	if style.general {
 		// Most numbers are whole and short, and General shows them as

@@ -259,7 +259,7 @@ func (b *Book) globals() {
 			font := symbol.None
 			if len(body) > 16 {
 				c.b = body[14:]
-				if name, ok := c.shortStr(scratch[:0]); ok {
+				if name, ok := c.shortStr(reuse(scratch)); ok {
 					font = symbol.ByName(string(name))
 					scratch = name
 				}
@@ -282,7 +282,7 @@ func (b *Book) globals() {
 			if b.biff5 {
 				read = c.shortStr // its length is in a byte
 			}
-			if code, ok := read(scratch[:0]); ok {
+			if code, ok := read(reuse(scratch)); ok {
 				// Text a format writes into a cell is text like any other.
 				codes[int(le.Uint16(body))], _ = clean.String(code, clean.Ligatures)
 				scratch = code
@@ -302,7 +302,7 @@ func (b *Book) globals() {
 			}
 			ref := sheetRef{pos: int(le.Uint32(body)), hidden: body[4]&3 != 0, kind: body[5]}
 			c.b = body[6:]
-			name, _ := c.shortStr(scratch[:0])
+			name, _ := c.shortStr(reuse(scratch))
 			scratch = name
 			// A formula names a sheet by its place in this list, the
 			// modules of the VBA project among them.
@@ -430,14 +430,14 @@ func (b *Book) strings(c *cursor) {
 			break
 		}
 		var ok bool
-		raw, ok = c.str(raw[:0])
+		raw, ok = c.str(reuse(raw))
 		if len(c.runs) > 0 {
 			b.richString(&all, uint32(i), raw, c.runs)
 		} else if clean.Plain(raw) {
 			all.Write(bytes.TrimSpace(raw))
 		} else {
 			var removed int
-			tmp, removed = clean.Append(tmp[:0], raw, clean.Ligatures)
+			tmp, removed = clean.Append(reuse(tmp), raw, clean.Ligatures)
 			b.removed += removed
 			all.Write(bytes.TrimSpace(tmp))
 		}
@@ -479,7 +479,7 @@ func (b *Book) richString(all *strings.Builder, index uint32, raw []byte, runs [
 	at, unit, next := 0, 0, 0
 	flush := func(to int, font symbol.Font) {
 		var removed int
-		piece, removed = clean.Append(piece[:0], raw[at:to], clean.Ligatures)
+		piece, removed = clean.Append(reuse(piece), raw[at:to], clean.Ligatures)
 		b.removed += removed
 		all.Write(piece)
 		at = to
@@ -499,7 +499,7 @@ func (b *Book) richString(all *strings.Builder, index uint32, raw []byte, runs [
 		i += size
 	}
 	var removed int
-	piece, removed = clean.Append(piece[:0], raw[at:], clean.Ligatures)
+	piece, removed = clean.Append(reuse(piece), raw[at:], clean.Ligatures)
 	b.removed += removed
 	all.Write(piece)
 	// What is written is not trimmed, so that the places of the runs hold:

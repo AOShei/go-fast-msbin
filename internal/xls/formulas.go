@@ -81,7 +81,7 @@ func (l *linkReader) supBook(b *Book, c *cursor) {
 	// or OLE link, and what formulas take through it is not read back. A
 	// path of one space is a link that is not used ([MS-XLS] 2.5.277).
 	c.b = c.b[2:]
-	path, ok := c.str(l.raw[:0])
+	path, ok := c.str(reuse(l.raw))
 	l.raw = path
 	link := ptg.Link{Kind: ptg.LinkBook}
 	switch {
@@ -100,7 +100,7 @@ func (l *linkReader) supBook(b *Book, c *cursor) {
 				break
 			}
 			var name []byte
-			name, ok = c.str(l.raw[:0])
+			name, ok = c.str(reuse(l.raw))
 			l.raw = name
 			if len(link.Sheets) >= warn.MaxExternalNames {
 				b.docLost.Add(warn.CapExternalSheets, 1)
@@ -130,7 +130,7 @@ func (l *linkReader) externName(b *Book, c *cursor) {
 	if flags&ole == 0 && link.Kind != ptg.LinkOther {
 		n.Sheet = int32(le.Uint16(c.b[2:]))
 		c.b = c.b[6:]
-		if name, ok := c.shortStr(l.raw[:0]); ok {
+		if name, ok := c.shortStr(reuse(l.raw)); ok {
 			text, _ := clean.String(name, clean.Prose)
 			n.Name = clean.Label(text)
 			l.raw = name
@@ -179,11 +179,11 @@ func (l *linkReader) name(b *Book, c *cursor) {
 	if b.biff5 {
 		// The name: bytes in the workbook's code page.
 		c.b = body[14:]
-		raw, ok = c.bytes(l.raw[:0], cch)
+		raw, ok = c.bytes(reuse(l.raw), cch)
 	} else {
 		// The name: a byte of flags and the characters.
 		c.b = body[15:]
-		raw, ok = c.chars(l.raw[:0], cch, body[14]&1 != 0)
+		raw, ok = c.chars(reuse(l.raw), cch, body[14]&1 != 0)
 	}
 	l.raw = raw
 	n := rawName{sheet: sheet}

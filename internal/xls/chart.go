@@ -294,7 +294,7 @@ func (sh *sheet) readChart() *chart.Chart {
 				break
 			}
 			c.b = b[2:]
-			raw, _ := c.shortStr(scratch[:0])
+			raw, _ := c.shortStr(reuse(scratch))
 			scratch = raw
 			s, removed := clean.String(raw, clean.Prose)
 			sh.removed += removed
@@ -363,7 +363,7 @@ func (sh *sheet) readChart() *chart.Chart {
 				v = cached{num: rk(le.Uint32(b[6:])), isNum: true, set: true}
 			case typ == recLabel:
 				c.b = b[6:]
-				raw, _ := c.str(scratch[:0])
+				raw, _ := c.str(reuse(scratch))
 				scratch = raw
 				s, removed := clean.String(raw, clean.Prose)
 				sh.removed += removed
@@ -417,7 +417,7 @@ func (sh *sheet) readChart() *chart.Chart {
 			switch {
 			case !p.set:
 			case p.isNum:
-				sh.out, _ = f.Number(sh.out[:0], p.num, sh.b.date1904)
+				sh.out, _ = f.Number(reuse(sh.out), p.num, sh.b.date1904)
 				out[i] = strings.TrimSpace(string(sh.out))
 			default:
 				out[i] = p.text

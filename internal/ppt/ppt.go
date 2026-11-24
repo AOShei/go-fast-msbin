@@ -5,8 +5,6 @@
 package ppt
 
 import (
-	"bytes"
-	"compress/zlib"
 	"context"
 	"encoding/binary"
 	"io"
@@ -14,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/inflate"
 	"github.com/AOShei/go-fast-msbin/internal/clean"
 	"github.com/AOShei/go-fast-msbin/internal/crypt"
 	"github.com/AOShei/go-fast-msbin/internal/officeart"
@@ -741,21 +740,27 @@ func (d *Deck) storage(id uint32, limit int64) (data []byte, compressed, ok bool
 	if len(r.Body) < 4 {
 		return nil, true, false
 	}
-	zr, err := zlib.NewReader(bytes.NewReader(r.Body[4:]))
-	if err != nil {
+	body := r.Body[4:]
+	if !zlibHeader(body) || limit < 0 {
 		return nil, true, false
 	}
-	defer zr.Close()
 	// Room for what the record says it expands to, where that is
 	// within the limit, so that the bytes are not copied as they grow.
 	// The limit is what is left of a budget, which may be overdrawn.
-	room := max(min(int64(le.Uint32(r.Body)), limit, maxExpect), 0)
-	out := bytes.NewBuffer(make([]byte, 0, room+bytes.MinRead))
-	_, err = out.ReadFrom(io.LimitReader(zr, limit+1))
-	if int64(out.Len()) > limit || err != nil && out.Len() == 0 {
+	// One byte over the limit shows that there is more than the limit.
+	room := min(int64(le.Uint32(r.Body)), limit, maxExpect)
+	out, err := inflate.Zlib(make([]byte, 0, room+512), body, limit+1)
+	if int64(len(out)) > limit || err != nil && len(out) == 0 {
 		return nil, true, false
 	}
-	return out.Bytes(), true, true
+	return out, true, true
+}
+
+// zlibHeader reports whether b begins as a zlib stream that starts from
+// no dictionary.
+func zlibHeader(b []byte) bool {
+	return len(b) >= 2 && b[0]&0x0f == 8 && b[0]>>4 <= 7 &&
+		(uint(b[0])<<8|uint(b[1]))%31 == 0 && b[1]&0x20 == 0
 }
 
 // Len returns the number of parts: the slides, one part for a
@@ -887,11 +892,12 @@ func (d *Deck) peek(id uint32, limit int64) (o Object, compressed, ok bool) {
 		return Object{}, true, false
 	}
 	size := int64(le.Uint32(r.Body))
-	zr, err := zlib.NewReader(bytes.NewReader(r.Body[4:]))
-	if err != nil || size > limit {
+	if !zlibHeader(r.Body[4:]) || size > limit {
 		return Object{}, true, false
 	}
-	l := &lazy{zr: zr, size: size}
+	// The deflate stream follows the two bytes of the header. Its
+	// checksum is not looked at: what expands is what is read.
+	l := &lazy{zr: inflate.NewRawReader(r.Body[6:], size), size: size}
 	// The first of it: an object of which nothing expands is none.
 	var first [1]byte
 	if n, _ := l.ReadAt(first[:], 0); n == 0 {

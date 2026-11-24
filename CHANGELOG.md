@@ -41,15 +41,18 @@ minor version may change the API.
   (`3.3E-321`, which was `3.30035851421953E-321`).
 - A duration that rounds to nothing has no minus sign: `[h]:mm:ss` of
   -1e-12 is `0:00:00`, which was `-0:00:00`.
-- Requires `go-fast-core` v0.1.4 (was v0.1.2): `Document.Text` and
-  `Document.Markdown` allocate their result once. The output is the same.
+- Requires `go-fast-core` v0.1.5 (was v0.1.2). `Document.Text` and
+  `Document.Markdown` allocate their result once. Compressed objects and
+  pictures are expanded with core's `inflate` package, which the library
+  now imports, in place of `compress/zlib`: the presentations of the corpus
+  in 0.21 s (was 0.30 s). The output is the same.
 - The command requires `go-fast-ooxml` v0.3.0 (was v0.2.0), which reads a
   long run of code paragraphs in an embedded `.docx` in linear time.
 
 - Faster on batches of ordinary files: the workbooks of the corpus in 0.77 s
   (was 1.09 s), the Word documents in 0.18 s (was 0.20 s), the
-  presentations in 0.28 s (was 0.45 s). A workbook of many small sheets
-  allocates a quarter less.
+  presentations in 0.28 s (was 0.45 s), before the change of decompressor
+  above. A workbook of many small sheets allocates a quarter less.
 - An embedded object of a presentation that is only listed (no
   `Options.Child`) is expanded only as far as it takes to say what it is.
   Its size is then what it says it expands to; for an object whose

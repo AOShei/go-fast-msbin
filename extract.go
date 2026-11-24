@@ -139,6 +139,32 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	return f.Document(ctx)
 }
 
+// Detect reports which of the three formats r is, as Extractor.Formats
+// names them: "doc", "xls" or "ppt". It gives "" for input that is not a
+// compound file, for a compound file that is none of the three (an
+// Outlook message, an object another program stored), and for one whose
+// directory cannot be read.
+//
+// It decides as Extract does, from the names of the streams in the
+// compound file's root storage, and reads the file's header and
+// directory only, never the content of a stream. So it names the format
+// of every compound file Extract takes for one of the three, among them
+// those Extract then refuses: a generation that is not read, an
+// encryption that is not read, a file damaged outside its directory. A
+// file of an old generation that is no compound file (Excel 2 to 4,
+// Word 2) gives "".
+//
+// It is for a program that reads several kinds of compound file and has
+// to choose a library for one.
+func Detect(r io.ReaderAt, size int64) string {
+	f, err := cfb.OpenDirectory(r, size)
+	if err != nil {
+		return ""
+	}
+	format, _ := detect.Named(f)
+	return format
+}
+
 // identify opens the compound file and says what it is. For a file that
 // is not a compound file it returns no file, and what the file is
 // instead. The error is one of the shared errors, wrapped.

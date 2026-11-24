@@ -2,6 +2,7 @@ package doc
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
@@ -146,6 +147,7 @@ func (t *tableBuilder) block(r *reader) (gofastcore.Block, bool) {
 	type span struct{ row, col, rows, cols int }
 	var merges []span
 	header := true
+	var joined strings.Builder
 	for i := 0; i < rows; i++ {
 		row := &t.rows[i]
 		tbl.Rows[i] = flat[i*cols : (i+1)*cols : (i+1)*cols]
@@ -155,6 +157,15 @@ func (t *tableBuilder) block(r *reader) (gofastcore.Block, bool) {
 			header = false
 		}
 		last := -1 // the merge of the cell before, for cells merged along the row
+		// The text of the cells merged into that cell, after its own: it
+		// is put in the cell once, when the cells merged into it end.
+		joined.Reset()
+		join := func() {
+			if joined.Len() > 0 {
+				tbl.Rows[merges[last].row][merges[last].col] = joined.String()
+				joined.Reset()
+			}
+		}
 		for k, text := range row.cells {
 			c, width := k, 1
 			if row.edges != nil {
@@ -174,7 +185,11 @@ func (t *tableBuilder) block(r *reader) (gofastcore.Block, bool) {
 				// Merged into the cell before it: that cell is wider.
 				merges[last].cols += width
 				if text != "" {
-					tbl.Rows[merges[last].row][merges[last].col] += "\n" + text
+					if joined.Len() == 0 {
+						joined.WriteString(tbl.Rows[merges[last].row][merges[last].col])
+					}
+					joined.WriteByte('\n')
+					joined.WriteString(text)
 				}
 				for j := c; j < c+width; j++ {
 					above[j] = 0
@@ -188,6 +203,7 @@ func (t *tableBuilder) block(r *reader) (gofastcore.Block, bool) {
 				}
 				continue
 			}
+			join()
 			tbl.Rows[i][c] = text
 			any = any || text != ""
 			last = -1
@@ -202,6 +218,7 @@ func (t *tableBuilder) block(r *reader) (gofastcore.Block, bool) {
 				}
 			}
 		}
+		join()
 	}
 	if !any {
 		return gofastcore.Block{}, false

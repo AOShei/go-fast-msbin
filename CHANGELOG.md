@@ -7,6 +7,14 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Fixed
+
+- A row of a Word table whose cells are merged along the row had the merged
+  cell's text copied once for each cell merged into it. A row has at most
+  255 cells, so the cost was bounded; it is now one copy. A row of 250
+  merged cells of 64 KiB each takes 0.13 s (was 0.23 s) and allocates
+  151 MB (was 2,030 MB). The output is the same.
+
 ## [0.1.1] - 2026-11-24
 
 ### Added

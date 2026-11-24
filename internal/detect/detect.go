@@ -64,25 +64,45 @@ const (
 	workbookStream = "Workbook"
 	bookStream     = "Book" // Excel 5 and 95
 	pptStream      = "PowerPoint Document"
+	oldPPTStream   = "PP40" // PowerPoint 95
 	currentUser    = "Current User"
 	// DualStorage is the storage that holds the PowerPoint 97
 	// presentation of a file saved for PowerPoint 95 and 97 both.
 	DualStorage = "PP97_DUALSTORAGE"
 )
 
-// Compound says what the open compound file is.
-func Compound(f *cfb.File) Info {
+// Named says which of the three formats the compound file is, and the
+// stream of its root storage that says so, from the names in its
+// directory alone. It gives nothing for a file that is none of them.
+func Named(f *cfb.File) (format, stream string) {
 	switch {
 	case f.Has(wordStream):
-		return word(f)
+		return Doc, wordStream
 	case f.Has(workbookStream):
-		return excel(f, workbookStream)
+		return Xls, workbookStream
 	case f.Has(bookStream):
-		return excel(f, bookStream)
+		return Xls, bookStream
 	case f.Has(pptStream):
+		return Ppt, pptStream
+	case f.Has(oldPPTStream):
+		return Ppt, oldPPTStream
+	}
+	return "", ""
+}
+
+// Compound says what the open compound file is.
+func Compound(f *cfb.File) Info {
+	switch _, stream := Named(f); stream {
+	case wordStream:
+		return word(f)
+	case workbookStream, bookStream:
+		return excel(f, stream)
+	case pptStream:
 		return powerpoint(f)
-	case f.Has("PP40"):
+	case oldPPTStream:
 		return Info{Format: Ppt, Version: "PowerPoint 95 or older"}
+	}
+	switch {
 	case f.Has("EncryptedPackage"), f.Has("\x06DataSpaces"):
 		return Info{Other: "an encrypted Office Open XML package (.docx, .xlsx, .pptx)"}
 	case f.Has("__properties_version1.0"):

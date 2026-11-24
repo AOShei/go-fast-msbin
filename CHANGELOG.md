@@ -7,6 +7,17 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Added
+
+- `Detect(r, size)` says which of the three formats a compound file is,
+  as `Extractor.Formats` names them (`doc`, `xls`, `ppt`), or `""` for
+  anything else: an Outlook message, another program's object, input that
+  is no compound file. It decides as `Extract` does and reads the file's
+  header and directory only (6 MB of the corpus's 1 GB), so a program that
+  reads several kinds of compound file can choose a library for one. It
+  names the format of a file `Extract` then refuses for its generation or
+  its encryption, so that the refusal is this library's.
+
 ## [0.1.2] - 2026-11-24
 
 ### Changed

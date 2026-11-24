@@ -171,7 +171,10 @@ for part, err := range f.Parts(ctx) { ... }                          // a sheet 
 `Extract` and `ExtractFile` give a `gofastcore.Document`. `Open` gives a
 `File`: its `Metadata`, its parts one at a time (`Parts`, `Part`) or as a
 `Document`, its embedded files (`Children`), and for a workbook its `Sheets`.
-`Extractor.MaxCells` bounds the cells kept from a workbook. The exported
+`Extractor.MaxCells` bounds the cells kept from a workbook. `Detect` says
+which of the three formats a compound file is (`doc`, `xls`, `ppt`, or
+nothing) from its directory alone, for a program that has to choose a
+library for one: an Outlook message is a compound file too. The exported
 declarations are held to `testdata/api.txt` by a test.
 
 The command prints JSON (the document, a line for each file when there are

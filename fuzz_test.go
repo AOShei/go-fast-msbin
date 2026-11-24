@@ -82,6 +82,8 @@ func FuzzExtract(f *testing.F) {
 		defer timer.Stop()
 		doc, err := extract(data, nil)
 		checkOutcome(t, doc, err)
+		// Detect says of the input what Extract made of it.
+		checkDetect(t, "the input", detect(data), doc, err)
 		// With a child extractor the embedded files are read too, each
 		// by this library where it is of these formats.
 		var seen []string

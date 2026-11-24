@@ -578,7 +578,7 @@ Checked with the command over all 8,067 files of the corpus (JSON with `-cells -
 
 Workbooks and Word documents are as they were: nothing in them is expanded in an ordinary run. The CI step that holds the library to go-fast-core allows the packages of that module, not only its root.
 
-**Released:** `v0.1.0` was tagged at `067181a` on 2026-11-23. What is on `main` after it is under `[Unreleased]` in the changelog; the next tag is Andrew's, after a pull request that dates that section.
+**Released:** `v0.1.0` was tagged at `067181a` on 2026-11-23. What came after it, down to core's decompressor above, is `v0.1.1` (2026-11-24), tagged at the merge of the pull request that dated that section of the changelog.
 
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).
 

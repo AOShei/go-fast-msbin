@@ -8,10 +8,10 @@ import (
 	"unicode/utf16"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/numfmt"
 	"github.com/AOShei/go-fast-msbin/internal/chart"
 	"github.com/AOShei/go-fast-msbin/internal/clean"
 	"github.com/AOShei/go-fast-msbin/internal/grid"
-	"github.com/AOShei/go-fast-msbin/internal/numfmt"
 	"github.com/AOShei/go-fast-msbin/internal/ptg"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
 )

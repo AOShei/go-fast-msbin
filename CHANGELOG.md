@@ -7,6 +7,12 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- Requires `go-fast-core` v0.1.7 (was v0.1.6). A workbook's numbers are
+  shown through their formats by core's package `numfmt`, the engine this
+  library had a copy of. What is read from a file does not change.
+
 ## [0.1.3] - 2026-11-24
 
 ### Added

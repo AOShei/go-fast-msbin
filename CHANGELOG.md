@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-24
+
 ### Added
 
 - `Detect(r, size)` says which of the three formats a compound file is,

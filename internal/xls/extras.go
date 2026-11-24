@@ -28,7 +28,7 @@ func (sh *sheet) textObject(b []byte) {
 	}
 	wide := c.b[0]&1 != 0
 	c.b = c.b[1:]
-	raw, _ := c.chars(sh.raw[:0], cch, wide)
+	raw, _ := c.chars(reuse(sh.raw), cch, wide)
 	sh.raw = raw
 	if sh.noteText == nil {
 		sh.noteText = map[uint16]string{}
@@ -51,7 +51,7 @@ func (sh *sheet) note(b []byte) {
 	n := comment{row: int32(le.Uint16(b)), col: int32(le.Uint16(b[2:])), obj: le.Uint16(b[6:])}
 	c := &sh.c
 	c.b = b[8:]
-	if raw, ok := c.str(sh.raw[:0]); ok {
+	if raw, ok := c.str(reuse(sh.raw)); ok {
 		author, removed := clean.String(raw, clean.Prose)
 		sh.removed += removed
 		n.author = sh.lost.Name(author)
@@ -70,7 +70,7 @@ func (sh *sheet) note5(b []byte) {
 	row, length := le.Uint16(b), int(le.Uint16(b[4:]))
 	c := &sh.c
 	c.b = b[6:]
-	raw, _ := c.bytes(sh.raw[:0], min(length, len(c.b)))
+	raw, _ := c.bytes(reuse(sh.raw), min(length, len(c.b)))
 	sh.raw = raw
 	text, removed := clean.String(raw, clean.Prose)
 	sh.removed += removed

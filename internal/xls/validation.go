@@ -44,7 +44,7 @@ func (sh *sheet) validation(b []byte) {
 	c.b = b[4:]
 	// The titles and texts of the prompt and of the error message.
 	for i := 0; i < 4; i++ {
-		raw, ok := c.str(sh.raw[:0])
+		raw, ok := c.str(reuse(sh.raw))
 		sh.raw = raw
 		if !ok {
 			return

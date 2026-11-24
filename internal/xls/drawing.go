@@ -186,7 +186,7 @@ func (sh *sheet) shapeText(b []byte) {
 	}
 	wide := c.b[0]&1 != 0
 	c.b = c.b[1:]
-	raw, _ := c.chars(sh.raw[:0], cch, wide)
+	raw, _ := c.chars(reuse(sh.raw), cch, wide)
 	sh.raw = raw
 	text, removed := clean.String(raw, clean.Prose)
 	sh.removed += removed

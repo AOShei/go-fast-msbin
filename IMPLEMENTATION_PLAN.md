@@ -562,6 +562,22 @@ The large files are as they were. What is left in workbooks, by the profile: num
 
 The command requires go-fast-ooxml v0.3.0.
 
+**Core's decompressor** (2026-11-24; go-fast-core v0.1.5, `CORE_TO_LIBS_SHARED_INFLATE.md`). The three places that used `compress/zlib` use `github.com/AOShei/go-fast-core/inflate`:
+
+- an embedded object of a presentation that is handed on, and its macro storage: `inflate.Zlib`, in one pass into the room the record says it needs;
+- an object that is only listed: an `inflate.Reader` over the deflate stream after the two bytes of the zlib header, read as far as the directory lies. The stream's checksum is not looked at there. It was looked at only when an object was read to its end, and then what had expanded was kept all the same, so nothing is read differently;
+- a compressed metafile (`internal/officeart`): `inflate.Zlib`. It is expanded only when the pictures' bytes are asked for, so an ordinary run gains nothing there.
+
+A stream whose header names a preset dictionary is refused, as `compress/zlib` refused it. The limits are held as before: one byte over the limit is asked for, to tell an object of exactly the limit from one over it.
+
+Checked with the command over all 8,067 files of the corpus (JSON with `-cells -images data`, and Markdown with `-stored`): every output is byte for byte the same. The batch of presentations, on a machine other sessions were using (three runs each way; one of the runs after was disturbed and is left out):
+
+| Batch | All workers | One worker | Allocated |
+|---|---|---|---|
+| `.ppt` | 0.20 to 0.22 s (was 0.29 to 0.32) | 0.26 to 0.28 s (was 0.35 to 0.37) | 0.78 GB (was 0.79) |
+
+Workbooks and Word documents are as they were: nothing in them is expanded in an ordinary run. The CI step that holds the library to go-fast-core allows the packages of that module, not only its root.
+
 **Released:** `v0.1.0` was tagged at `067181a` on 2026-11-23. What is on `main` after it is under `[Unreleased]` in the changelog; the next tag is Andrew's, after a pull request that dates that section.
 
 After the release, each library's owner decides whether its command routes embedded legacy files here (go-fast-email, go-fast-ooxml, go-fast-odf).

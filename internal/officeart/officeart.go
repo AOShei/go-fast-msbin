@@ -10,12 +10,11 @@
 package officeart
 
 import (
-	"bytes"
-	"compress/zlib"
 	"encoding/binary"
 	"errors"
-	"io"
 	"unicode/utf16"
+
+	"github.com/AOShei/go-fast-core/inflate"
 )
 
 var le = binary.LittleEndian
@@ -287,14 +286,13 @@ func Blip(r Rec, data bool, limit int64) (Picture, error) {
 		return p, nil
 	}
 	p.Compressed = true
-	zr, err := zlib.NewReader(bytes.NewReader(b))
-	if err != nil {
-		return p, err
+	// A zlib stream that starts from no dictionary.
+	if len(b) < 2 || b[0]&0x0f != 8 || b[0]>>4 > 7 || (uint(b[0])<<8|uint(b[1]))%31 != 0 || b[1]&0x20 != 0 {
+		return p, inflate.ErrHeader
 	}
-	defer zr.Close()
 	// What it expands to is read as far as the limit, whatever the record
-	// says its size is.
-	out, err := io.ReadAll(io.LimitReader(zr, limit+1))
+	// says its size is. One byte more shows that there is more.
+	out, err := inflate.Zlib(nil, b, max(limit, 0)+1)
 	if int64(len(out)) > limit {
 		return p, ErrBudget
 	}

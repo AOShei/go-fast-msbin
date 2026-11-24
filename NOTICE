@@ -17,8 +17,8 @@ All of it is by the same author and under the same MIT License.
                               internal/codepage, v0.1.2), unchanged.
   internal/numfmt,            from go-fast-ooxml (github.com/AOShei/go-fast-ooxml,
   internal/symbol,            v0.1.1; internal/numfmt and its table as of
-  internal/label,             v0.3.0), unchanged, with the table of what
-  internal/clean,             LibreOffice displays for 6,972 pairs of a number
+  internal/label,             v0.5.0), unchanged, with the table of what
+  internal/clean,             LibreOffice displays for 7,392 pairs of a number
   testdata/numfmt             format and a value (testdata/numfmt).
   internal/vba,               from go-fast-ooxml (v0.1.1), adapted: the VBA
   internal/warn,              reader takes a storage of the file; the bounds

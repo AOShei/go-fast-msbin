@@ -7,6 +7,16 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- The command requires `go-fast-ooxml` v0.5.0 (was v0.3.0), and with it
+  `go-fast-core` v0.1.6 (was v0.1.5). For a `.docx`, `.xlsx` or `.pptx`
+  embedded in a document this fixes three readers of go-fast-ooxml that
+  could lose headings of a Word document with a large style sheet, shared
+  formulas of a workbook (with `-cells`) and the categories of a newer
+  chart, and reads them with core's decompressor. No file of the corpus
+  gives different output.
+
 ### Fixed
 
 - A row of a Word table whose cells are merged along the row had the merged

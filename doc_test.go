@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -153,6 +154,91 @@ func TestWordTable(tt *testing.T) {
 	}
 	if !reflect.DeepEqual(b[1].Table.Merges, []gofastcore.Merge{{Row: 1, Col: 0, RowSpan: 1, ColSpan: 2}, {Row: 2, Col: 0, RowSpan: 2, ColSpan: 1}}) || b[1].Table.HeaderRows != 1 {
 		tt.Errorf("merges %+v, header rows %d", b[1].Table.Merges, b[1].Table.HeaderRows)
+	}
+}
+
+// rowDef is the definition of a table's row: its length, the number of
+// cells, the positions of their edges, and twenty bytes for each cell,
+// which begin with the cell's flags.
+func rowDef(flags []uint16, edges ...uint16) []byte {
+	body := t.Cat([]byte{byte(len(edges) - 1)}, t.U16(edges...))
+	for i := 0; i < len(edges)-1; i++ {
+		cell := make([]byte, 20)
+		if i < len(flags) {
+			cell[0], cell[1] = byte(flags[i]), byte(flags[i]>>8)
+		}
+		body = append(body, cell...)
+	}
+	return t.Cat(t.Sprm(0x2416, 1), t.Sprm(0x2417, 1), t.Sprm(0xD608), t.U16(uint16(len(body)+1)), body)
+}
+
+// Cells merged along a row are one cell, with the text of each on a line
+// of its own; a cell with no text adds no line.
+func TestWordCellsMergedAlongARow(tt *testing.T) {
+	in := t.Sprm(0x2416, 1)
+	cell := func(s string) t.DocPara { return t.DocPara{Text: s, Mark: 7, Papx: in} }
+	doc := mustExtract(tt, wordFileOf(t.DocFile{Main: []t.DocPara{
+		cell("a"), cell("b"), cell(""), cell("d"), cell("e"),
+		{Text: "", Mark: 7, Papx: rowDef([]uint16{1, 2, 2, 2, 0}, 0, 100, 200, 300, 400, 500)},
+		// The first of the merged cells has no text; then two merges in one row.
+		cell(""), cell("g"), cell("h"), cell("i"), cell("j"),
+		{Text: "", Mark: 7, Papx: rowDef([]uint16{1, 2, 0, 1, 2}, 0, 100, 200, 300, 400, 500)},
+		// A cell that says it is merged, with none before it to merge into.
+		cell("k"), cell("l"), cell("m"), cell("n"), cell("o"),
+		{Text: "", Mark: 7, Papx: rowDef([]uint16{2, 0, 0, 0, 0}, 0, 100, 200, 300, 400, 500)},
+	}}), nil)
+	b := doc.Parts[0].Blocks
+	if len(b) != 1 || b[0].Kind != gofastcore.KindTable {
+		tt.Fatalf("%v", lines(&doc.Parts[0]))
+	}
+	want := [][]string{{"a\nb\nd", "", "", "", "e"}, {"\ng", "", "h", "i\nj", ""}, {"k", "l", "m", "n", "o"}}
+	if !reflect.DeepEqual(b[0].Table.Rows, want) {
+		tt.Errorf("rows: %q", b[0].Table.Rows)
+	}
+	merges := []gofastcore.Merge{{Row: 0, Col: 0, RowSpan: 1, ColSpan: 4}, {Row: 1, Col: 0, RowSpan: 1, ColSpan: 2}, {Row: 1, Col: 3, RowSpan: 1, ColSpan: 2}}
+	if !reflect.DeepEqual(b[0].Table.Merges, merges) {
+		tt.Errorf("merges: %+v", b[0].Table.Merges)
+	}
+}
+
+// A row of as many cells as a row can have, all merged into the first,
+// costs no more than their text: not a copy of the cell for each.
+func TestWordLongRowOfMergedCells(tt *testing.T) {
+	const cells, size = 250, 64 << 10
+	in := t.Sprm(0x2416, 1)
+	text := strings.Repeat("seventeen bytes, ", size/17) + "end"
+	paras := make([]t.DocPara, 0, cells+1)
+	flags := make([]uint16, cells)
+	edges := make([]uint16, cells+1)
+	var want strings.Builder
+	for i := 0; i < cells; i++ {
+		paras = append(paras, t.DocPara{Text: text, Mark: 7, Papx: in})
+		flags[i], edges[i+1] = 2, uint16(100*(i+1))
+		if i > 0 {
+			want.WriteByte('\n')
+		}
+		want.WriteString(text)
+	}
+	flags[0] = 1
+	paras = append(paras, t.DocPara{Text: "", Mark: 7, Papx: rowDef(flags, edges...)})
+	data := wordFileOf(t.DocFile{Main: paras})
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	start := time.Now()
+	doc := mustExtract(tt, data, nil)
+	took := time.Since(start)
+	runtime.ReadMemStats(&after)
+	allocated := after.TotalAlloc - before.TotalAlloc
+	b := doc.Parts[0].Blocks
+	if len(b) != 1 || b[0].Kind != gofastcore.KindTable || len(b[0].Table.Rows) != 1 || b[0].Table.Rows[0][0] != want.String() {
+		tt.Fatalf("%d blocks; the cell's text is not the %d bytes of the cells", len(b), want.Len())
+	}
+	tt.Logf("%d cells of %d bytes took %v and allocated %d MB", cells, len(text), took, allocated>>20)
+	// Joined by copying, the cell is allocated once for each cell merged
+	// into it: 2,030 MB for these 16 MB of text, where joined once it is
+	// 151 MB.
+	if allocated > 512<<20 {
+		tt.Errorf("a row of %d merged cells allocated %d MB", cells, allocated>>20)
 	}
 }
 

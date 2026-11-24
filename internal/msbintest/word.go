@@ -72,11 +72,13 @@ type docRunAt struct {
 }
 
 // WordStreams returns the streams of the document: WordDocument and
-// 1Table.
+// 1Table, and Data where a paragraph's properties are too long for a
+// page of them.
 func WordStreams(d DocFile) map[string][]byte {
 	le := binary.LittleEndian
 	var units []uint16
 	var paras, runs []docRunAt
+	var huge []byte // the Data stream: paragraph properties too long for a page
 	width := 2
 	if d.Narrow {
 		width = 1
@@ -91,7 +93,15 @@ func WordStreams(d DocFile) map[string][]byte {
 				mark = 0x0D
 			}
 			units = append(units, uint16(mark))
-			paras = append(paras, docRunAt{len(units), append(U16(p.Style), p.Papx...)})
+			papx := p.Papx
+			if len(papx) > 400 {
+				// Too long for a page of properties: kept in the Data
+				// stream after its length, and the page says where.
+				at := len(huge)
+				huge = append(le.AppendUint16(huge, uint16(len(papx))), papx...)
+				papx = Sprm(0x6646, byte(at), byte(at>>8), byte(at>>16), byte(at>>24))
+			}
+			paras = append(paras, docRunAt{len(units), append(U16(p.Style), papx...)})
 			// The runs: as given, with the special characters apart.
 			given := p.Runs
 			if given == nil {
@@ -192,6 +202,9 @@ func WordStreams(d DocFile) map[string][]byte {
 				rgfc = le.AppendUint32(rgfc, fcOf(list[i+n].end))
 				n++
 			}
+			if n == 0 {
+				panic("msbintest: properties too long for a page")
+			}
 			copy(page, rgfc)
 			copy(page[len(rgfc):], rgb)
 			page[docPage-1] = byte(n)
@@ -285,7 +298,11 @@ func WordStreams(d DocFile) map[string][]byte {
 		fib = append(fib, U32(fc[i], lcb[i])...)
 	}
 	copy(word, fib)
-	return map[string][]byte{"WordDocument": word, "1Table": table}
+	streams := map[string][]byte{"WordDocument": word, "1Table": table}
+	if huge != nil {
+		streams["Data"] = huge
+	}
+	return streams
 }
 
 // Word6Stream returns the WordDocument stream of a document of Word 6 or

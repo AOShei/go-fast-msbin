@@ -7,6 +7,13 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- Requires `go-fast-core` v0.1.9 (was v0.1.8), whose number formats
+  write a whole number through a plain format (`#,##0`, `0.00`) directly.
+  Workbooks are read about 2% faster. What is read from a file does not
+  change.
+
 ## [0.1.4] - 2026-11-25
 
 ### Changed

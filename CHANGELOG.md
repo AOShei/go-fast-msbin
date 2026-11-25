@@ -9,9 +9,13 @@ minor version may change the API.
 
 ### Changed
 
-- Requires `go-fast-core` v0.1.7 (was v0.1.6). A workbook's numbers are
+- Requires `go-fast-core` v0.1.8 (was v0.1.6). A workbook's numbers are
   shown through their formats by core's package `numfmt`, the engine this
   library had a copy of. What is read from a file does not change.
+- Workbooks are read faster: the corpus's 1,111 in 0.69 s (was 0.76 s).
+  A sheet repeats its numbers, and one shown before through the same
+  format is copied and not worked out again. Each sheet being read
+  holds a cache for this, of 368 KB at most when a sheet has filled it.
 
 ## [0.1.3] - 2026-11-24
 

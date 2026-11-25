@@ -9,6 +9,7 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-msbin"
 	"github.com/AOShei/go-fast-msbin/internal/msbintest"
+	"github.com/AOShei/go-fast-msbin/internal/xls"
 )
 
 // benchCorpus reads every file of one format of the corpus, one after
@@ -47,6 +48,21 @@ func benchCorpus(b *testing.B, format string, workers int) {
 
 func BenchmarkCorpusXLS(b *testing.B)          { benchCorpus(b, "xls", 0) }
 func BenchmarkCorpusXLSOneWorker(b *testing.B) { benchCorpus(b, "xls", 1) }
+
+// The workbooks again with no cache of formatted numbers, for what the
+// cache gives (xls.NumberCache).
+func BenchmarkCorpusXLSNoNumberCache(b *testing.B) {
+	defer func(n int) { xls.NumberCache = n }(xls.NumberCache)
+	xls.NumberCache = 0
+	benchCorpus(b, "xls", 0)
+}
+
+func BenchmarkCorpusXLSOneWorkerNoNumberCache(b *testing.B) {
+	defer func(n int) { xls.NumberCache = n }(xls.NumberCache)
+	xls.NumberCache = 0
+	benchCorpus(b, "xls", 1)
+}
+
 func BenchmarkCorpusDOC(b *testing.B)          { benchCorpus(b, "doc", 0) }
 func BenchmarkCorpusPPT(b *testing.B)          { benchCorpus(b, "ppt", 0) }
 func BenchmarkCorpusPPTOneWorker(b *testing.B) { benchCorpus(b, "ppt", 1) }

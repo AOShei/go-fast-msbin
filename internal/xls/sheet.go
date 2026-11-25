@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-core/numfmt"
@@ -83,9 +84,10 @@ type sheet struct {
 	capped bool
 	text   arena
 	room   *gofastcore.TextBudget
-	raw    []byte // a string being read
-	out    []byte // a value being formatted
-	sym    []byte // text being translated from a symbol font
+	raw    []byte        // a string being read
+	out    []byte        // a value being formatted
+	shown  *numfmt.Cache // what the formats made of the sheet's recent numbers
+	sym    []byte        // text being translated from a symbol font
 
 	// The row being read: the cells of a row are charged to the budgets
 	// together.
@@ -196,11 +198,44 @@ func errorText(code byte) string {
 	return "#ERR" + strconv.Itoa(int(code))
 }
 
+// NumberCache is how many of a sheet's recent numbers are remembered
+// as their formats showed them (numfmt.Cache). A sheet repeats itself,
+// the same amount or date down a column, and a number shown before is
+// then copied and not worked out again: seven numbers in ten of the
+// corpus. Each sheet being read holds one cache, of 368 KB at most when
+// a sheet has filled it; most sheets leave it at a few kilobytes. Zero
+// is no cache. It is a variable so that a benchmark can measure what
+// the cache gives; nothing else changes it.
+var NumberCache = 4096
+
+// numberCache is a cache kept from one sheet to the next, with the
+// size it was made for.
+type numberCache struct {
+	entries int
+	shown   *numfmt.Cache
+}
+
+var numberCaches sync.Pool
+
 // sheet reads the sheet with the given index.
 func (b *Book) sheet(ctx context.Context, index int) *sheet {
 	ref := b.refs[index]
 	sh := &sheet{b: b, ctx: ctx, unread: map[string]int{}, rowAt: -1, last: pos{-1, -1}, index: ref.place}
 	sh.c.cp = b.cp
+	if n := NumberCache; n > 0 {
+		held, _ := numberCaches.Get().(*numberCache)
+		if held == nil || held.entries != n {
+			held = &numberCache{entries: n, shown: numfmt.NewCache(n)}
+		}
+		sh.shown = held.shown
+		// The cache is emptied before it is put back, so that it does
+		// not keep the workbook's formats while it waits.
+		defer func() {
+			sh.shown = nil
+			held.shown.Reset()
+			numberCaches.Put(held)
+		}()
+	}
 	start := b.at(&sh.c, ref.pos)
 	sh.room = gofastcore.TextBudgetFrom(ctx)
 	sh.g.Room = sh.room
@@ -650,7 +685,7 @@ func (sh *sheet) number(row, col int32, style *cellStyle, v float64) bool {
 		}
 	} else {
 		var result numfmt.Result
-		out, result = style.format.Number(out, v, sh.b.date1904)
+		out, result = sh.shown.Number(style.format, out, v, sh.b.date1904)
 		hidden = blank(result)
 		if result == numfmt.Date {
 			kind = gofastcore.CellDate

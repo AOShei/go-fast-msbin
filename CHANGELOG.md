@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-11-25
+
 ### Changed
 
 - Requires `go-fast-core` v0.1.9 (was v0.1.8), whose number formats

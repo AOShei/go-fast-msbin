@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-25
+
 ### Changed
 
 - Requires `go-fast-core` v0.1.8 (was v0.1.6). A workbook's numbers are

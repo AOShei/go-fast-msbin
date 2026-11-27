@@ -35,6 +35,11 @@ minor version may change the API.
 - Not changed: a workbook of Excel 5/95 or a property set that names
   UTF-16 (code page 1200 or 1201) for strings it keeps as bytes is read
   as before, the ASCII kept and the rest U+FFFD and counted.
+- The command requires `go-fast-ooxml` v0.7.0 (was v0.5.0), which reads
+  the Office Open XML files embedded in a document with core's packages
+  too. An embedded compound file that is damaged and holds no document
+  is now listed as `child.unsupported`, with this library's reason; it
+  was `child.failed`.
 
 ## [0.1.5] - 2026-11-25
 

@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-27
+
 ### Fixed
 
 - A VBA project that names UTF-16 (code page 1200 or 1201) as the code

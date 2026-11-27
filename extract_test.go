@@ -78,6 +78,8 @@ func TestFilesAreToldApart(t *testing.T) {
 		"powerpoint, capi":   {cfbtest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Current User": currentUser(0xF3D1C4DF, 0x03F4)}), "encrypted: what it says of its encryption cannot be read", gofastcore.ErrUnsupported},
 		"powerpoint 95":      {cfbtest.Compound(map[string][]byte{"PowerPoint Document": {1}, "PP40": {1}}), "PowerPoint 95 or older file: this generation of the format is not read", gofastcore.ErrUnsupported},
 		"encrypted package":  {cfbtest.Compound(map[string][]byte{"EncryptedPackage": {1}, "EncryptionInfo": {1}}), "an encrypted Office Open XML package", gofastcore.ErrUnsupported},
+		"rights-managed":     {cfbtest.Compound(map[string][]byte{"\x09DRMContent": {1}}), "an encrypted Office Open XML package", gofastcore.ErrUnsupported},
+		"data spaces":        {cfbtest.Compound(map[string][]byte{"\x06DataSpaces/Version": {1}}), "an encrypted Office Open XML package", gofastcore.ErrUnsupported},
 		"outlook message":    {cfbtest.Compound(map[string][]byte{"__properties_version1.0": {1}}), "an Outlook message", gofastcore.ErrUnsupported},
 		"other compound":     {cfbtest.Compound(map[string][]byte{"Contents": {1}}), "no Word, Excel or PowerPoint document in it", gofastcore.ErrUnsupported},
 		"excel 4":            {append(record(0x0409, u16s(4, 0x10, 0)...), make([]byte, 600)...), "Excel 4 (BIFF4) file: this generation of the format is not read", gofastcore.ErrUnsupported},

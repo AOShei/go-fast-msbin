@@ -7,6 +7,15 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- Requires `go-fast-core` v0.1.17 (was v0.1.14). The envelope of an
+  encrypted package is known by core's test, the one go-fast-ooxml and
+  go-fast-pdf use. A compound file that holds rights-managed content and
+  nothing else of an envelope (a `\x09DRMContent` stream alone) is now
+  refused as an encrypted package; it was refused as a compound file with
+  no Word, Excel or PowerPoint document in it.
+
 ## [0.2.1] - 2026-11-27
 
 ### Fixed

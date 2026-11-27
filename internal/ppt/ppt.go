@@ -12,12 +12,12 @@ import (
 	"strconv"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/inflate"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
+	"github.com/AOShei/go-fast-core/symbol"
 	"github.com/AOShei/go-fast-msbin/internal/crypt"
 	"github.com/AOShei/go-fast-msbin/internal/officeart"
 	"github.com/AOShei/go-fast-msbin/internal/stored"
-	"github.com/AOShei/go-fast-msbin/internal/symbol"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
 )

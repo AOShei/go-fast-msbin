@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
+	"github.com/AOShei/go-fast-core/vba/vbatest"
 	"github.com/AOShei/go-fast-msbin"
 	"github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
@@ -89,7 +91,7 @@ func TestMetadata(t *testing.T) {
 			{ID: 0x01000002, Value: "bookmark"}, // what property 2 is linked to
 		}},
 	)
-	doc := mustExtract(t, msbintest.Compound(with(wordFile(), map[string][]byte{
+	doc := mustExtract(t, cfbtest.Compound(with(wordFile(), map[string][]byte{
 		"\x05SummaryInformation": summary, "\x05DocumentSummaryInformation": docSummary})), nil)
 	m := doc.Metadata
 	if m.Title != "Budget  report" || m.Subject != "Cafés" || len(m.Authors) != 1 || m.Authors[0] != "A. Author; B. Author" ||
@@ -130,14 +132,14 @@ func TestMetadataCodePages(t *testing.T) {
 		{10000, "\x8e", "é"},
 	} {
 		s := msbintest.PropertyStream(msbintest.Section{Format: msbintest.FmtSummary, CodePage: c.cp, Props: []msbintest.Prop{{ID: 2, Value: c.title}}})
-		doc := mustExtract(t, msbintest.Compound(with(bookFile(), map[string][]byte{"\x05SummaryInformation": s})), nil)
+		doc := mustExtract(t, cfbtest.Compound(with(bookFile(), map[string][]byte{"\x05SummaryInformation": s})), nil)
 		if doc.Metadata.Title != c.want {
 			t.Errorf("code page %d: %q", c.cp, doc.Metadata.Title)
 		}
 	}
 	// A code page with no table: what is not ASCII is U+FFFD, and counted.
 	s := msbintest.PropertyStream(msbintest.Section{Format: msbintest.FmtSummary, CodePage: 1361, Props: []msbintest.Prop{{ID: 2, Value: "a\xcf\xf0"}}})
-	doc := mustExtract(t, msbintest.Compound(with(bookFile(), map[string][]byte{"\x05SummaryInformation": s})), nil)
+	doc := mustExtract(t, cfbtest.Compound(with(bookFile(), map[string][]byte{"\x05SummaryInformation": s})), nil)
 	if w, ok := warning(doc.Warnings, gofastcore.WarnTextUnmappedGlyphs); doc.Metadata.Title != "a\uFFFD\uFFFD" || !ok || !strings.HasPrefix(w.Message, "2 characters") {
 		t.Errorf("%q, %+v", doc.Metadata.Title, doc.Warnings)
 	}
@@ -148,7 +150,7 @@ func TestMetadataCodePages(t *testing.T) {
 func TestMetadataDamaged(t *testing.T) {
 	good := msbintest.PropertyStream(msbintest.Section{Format: msbintest.FmtSummary, CodePage: 1252, Props: []msbintest.Prop{
 		{ID: 2, Value: "The title"}, {ID: 4, Value: "The author"}}})
-	doc := mustExtract(t, msbintest.Compound(with(wordFile(), map[string][]byte{"\x05SummaryInformation": good[:len(good)-6]})), nil)
+	doc := mustExtract(t, cfbtest.Compound(with(wordFile(), map[string][]byte{"\x05SummaryInformation": good[:len(good)-6]})), nil)
 	if w, ok := warning(doc.Warnings, gofastcore.WarnInputStreamDamaged); !ok || w.Message != "the property stream SummaryInformation" || doc.Metadata.Title != "The title" {
 		t.Errorf("%+v, %+v", doc.Metadata, doc.Warnings)
 	}
@@ -157,9 +159,9 @@ func TestMetadataDamaged(t *testing.T) {
 		for _, b := range []byte{0, 0xFF, good[i] + 1} {
 			bad := append([]byte(nil), good...)
 			bad[i] = b
-			mustExtract(t, msbintest.Compound(with(wordFile(), map[string][]byte{"\x05SummaryInformation": bad})), nil)
+			mustExtract(t, cfbtest.Compound(with(wordFile(), map[string][]byte{"\x05SummaryInformation": bad})), nil)
 		}
-		mustExtract(t, msbintest.Compound(with(wordFile(), map[string][]byte{"\x05SummaryInformation": good[:i]})), nil)
+		mustExtract(t, cfbtest.Compound(with(wordFile(), map[string][]byte{"\x05SummaryInformation": good[:i]})), nil)
 	}
 	// More custom properties than are kept, and a value longer than is kept.
 	var props []msbintest.Prop
@@ -169,7 +171,7 @@ func TestMetadataDamaged(t *testing.T) {
 	s := msbintest.PropertyStream(
 		msbintest.Section{Format: msbintest.FmtDocSummary, CodePage: 1252, Props: []msbintest.Prop{{ID: 15, Value: strings.Repeat("c", 70000)}}},
 		msbintest.Section{Format: msbintest.FmtUser, CodePage: 1252, Props: props})
-	doc = mustExtract(t, msbintest.Compound(with(wordFile(), map[string][]byte{"\x05DocumentSummaryInformation": s})), nil)
+	doc = mustExtract(t, cfbtest.Compound(with(wordFile(), map[string][]byte{"\x05DocumentSummaryInformation": s})), nil)
 	if n := len(doc.Metadata.Extra); n != 257 || len(doc.Metadata.Extra["company"]) != 64<<10 {
 		t.Errorf("%d properties, company of %d bytes", n, len(doc.Metadata.Extra["company"]))
 	}
@@ -198,10 +200,10 @@ func TestMacros(t *testing.T) {
 		"excel": {bookFile(), "_VBA_PROJECT_CUR/"},
 		"other": {bookFile(), "Somewhere/"},
 	} {
-		streams := with(c.base, msbintest.VBAStreams(c.prefix, 1252,
-			msbintest.VBAModule{Name: "Module1", Code: code}, msbintest.VBAModule{Name: "Empty", Code: ""},
-			msbintest.VBAModule{Name: "ThisDocument", Code: "' nothing\r\n"}))
-		doc := mustExtract(t, msbintest.Compound(streams), nil)
+		streams := with(c.base, vbatest.VBAStreams(c.prefix, 1252,
+			vbatest.VBAModule{Name: "Module1", Code: code}, vbatest.VBAModule{Name: "Empty", Code: ""},
+			vbatest.VBAModule{Name: "ThisDocument", Code: "' nothing\r\n"}))
+		doc := mustExtract(t, cfbtest.Compound(streams), nil)
 		if w, ok := warning(doc.Warnings, gofastcore.WarnInputActiveContent); !ok || w.Severity != gofastcore.SeverityInfo {
 			t.Errorf("%s: %+v", name, doc.Warnings)
 		}
@@ -221,20 +223,20 @@ func TestMacros(t *testing.T) {
 			t.Errorf("%s: %+v", name, blocks[1])
 		}
 		// The stored part comes with the whole document only.
-		doc = mustExtract(t, msbintest.Compound(streams), &gofastcore.Options{Parts: gofastcore.PartRange{First: 1, Last: 1}})
+		doc = mustExtract(t, cfbtest.Compound(streams), &gofastcore.Options{Parts: gofastcore.PartRange{First: 1, Last: 1}})
 		if len(doc.Parts) != 1 || doc.Parts[0].Kind == gofastcore.PartStored {
 			t.Errorf("%s: a range of parts gives %d parts", name, len(doc.Parts))
 		}
 		// The limit on text cuts the code, and says so.
-		doc = mustExtract(t, msbintest.Compound(streams), &gofastcore.Options{Limits: gofastcore.Limits{MaxTextBytes: 40}})
+		doc = mustExtract(t, cfbtest.Compound(streams), &gofastcore.Options{Limits: gofastcore.Limits{MaxTextBytes: 40}})
 		if w, ok := warning(doc.Parts[1].Warnings, gofastcore.WarnLimitExceeded); !ok || w.Severity != gofastcore.SeverityError {
 			t.Errorf("%s: limit: %+v", name, doc.Parts[1].Warnings)
 		}
 	}
 	// A damaged project is named, and the document is read.
-	streams := with(wordFile(), msbintest.VBAStreams("Macros/", 1252, msbintest.VBAModule{Name: "M", Code: code}))
+	streams := with(wordFile(), vbatest.VBAStreams("Macros/", 1252, vbatest.VBAModule{Name: "M", Code: code}))
 	streams["Macros/VBA/dir"] = []byte{9, 9, 9}
-	doc := mustExtract(t, msbintest.Compound(streams), nil)
+	doc := mustExtract(t, cfbtest.Compound(streams), nil)
 	if w, ok := warning(doc.Warnings, gofastcore.WarnInputStreamDamaged); !ok || w.Message != "1 stream could not be read to its end (Macros/VBA)" {
 		t.Errorf("%+v", doc.Warnings)
 	}
@@ -297,7 +299,7 @@ func TestEmbeddedObjects(t *testing.T) {
 		"ObjectPool/_1000000006/\x01Ole10Native":          append([]byte{5, 0, 0, 0}, "raw!!"...),
 		"ObjectPool/_1000000007/Equation Native":          {1, 2, 3, 4},
 	})
-	data := msbintest.Compound(streams)
+	data := cfbtest.Compound(streams)
 
 	// With no child extractor every object is listed.
 	doc := mustExtract(t, data, nil)
@@ -385,7 +387,7 @@ func TestEmbeddedObjectsOfAWorkbook(t *testing.T) {
 		"MBDsomething/else":        {1},
 	})
 	var seen []string
-	doc := mustExtract(t, msbintest.Compound(streams), &gofastcore.Options{Child: self(&seen)})
+	doc := mustExtract(t, cfbtest.Compound(streams), &gofastcore.Options{Child: self(&seen)})
 	if len(doc.Children) != 1 || doc.Children[0].Source.Format != "doc" || strings.Join(seen, " ") != "MBD0001A2B3.doc" {
 		t.Errorf("%v, %d children", seen, len(doc.Children))
 	}
@@ -397,9 +399,9 @@ func TestEmbeddedObjectsOfAWorkbook(t *testing.T) {
 // The same file read through File a part at a time gives what Extract
 // gives.
 func TestFileAPartAtATime(t *testing.T) {
-	streams := with(wordFile(), msbintest.VBAStreams("Macros/", 1252, msbintest.VBAModule{Name: "M", Code: "Sub A()\r\nEnd Sub\r\n"}))
+	streams := with(wordFile(), vbatest.VBAStreams("Macros/", 1252, vbatest.VBAModule{Name: "M", Code: "Sub A()\r\nEnd Sub\r\n"}))
 	streams["ObjectPool/_1/Package"] = []byte("PK\x03\x04")
-	data := msbintest.Compound(streams)
+	data := cfbtest.Compound(streams)
 	whole := mustExtract(t, data, nil)
 	f, err := gofastmsbin.OpenBytes(data, nil)
 	if err != nil {

@@ -7,7 +7,7 @@ import (
 	"encoding/binary"
 	"unicode/utf8"
 
-	"github.com/AOShei/go-fast-msbin/internal/codepage"
+	"github.com/AOShei/go-fast-core/charset"
 )
 
 // Record types that are read ([MS-XLS] 2.3).
@@ -100,7 +100,7 @@ func (c *cursor) bytes(dst []byte, cch int) ([]byte, bool) {
 		c.b = c.b[n:]
 		cch -= n
 	}
-	text, undecoded := codepage.Decode(c.cp, c.tmp)
+	text, undecoded := charset.DecodeCodePage(c.cp, c.tmp)
 	c.undecoded += undecoded
 	return append(dst, text...), ok
 }

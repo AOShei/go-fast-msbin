@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
 	"github.com/AOShei/go-fast-msbin"
 	t "github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
@@ -85,7 +86,7 @@ func TestEncryptedDocuments(tt *testing.T) {
 	for scheme, name := range map[int]string{t.CryptXOR: "XOR obfuscation", t.CryptRC4: "RC4", t.CryptAPI: "RC4 CryptoAPI"} {
 		streams := t.WordStreams(file)
 		t.EncryptWord(streams, scheme, "open sesame")
-		doc := opens(tt, name, t.Compound(streams), "open sesame", name)
+		doc := opens(tt, name, cfbtest.Compound(streams), "open sesame", name)
 		b := doc.Parts[0].Blocks
 		if len(b) != 2 || b[0].Kind != gofastcore.KindHeading || b[0].Text != "A heading" || !strings.HasSuffix(b[1].Text, "enough for several keys.") || len(b[1].Text) < 2000 {
 			tt.Errorf("%s: %d blocks, %q", name, len(b), b[0].Text)
@@ -98,7 +99,7 @@ func TestEncryptedDocuments(tt *testing.T) {
 func TestEncryptedWord6(tt *testing.T) {
 	w := t.Word6Stream(0x0409, "A heading\rText in the code page: caf\xe9.\r")
 	t.EncryptWord6(w, "open sesame")
-	doc := opens(tt, "Word 6", t.Compound(map[string][]byte{"WordDocument": w}), "open sesame", "XOR obfuscation")
+	doc := opens(tt, "Word 6", cfbtest.Compound(map[string][]byte{"WordDocument": w}), "open sesame", "XOR obfuscation")
 	wantLines(tt, "Word 6", lines(&doc.Parts[0]), []string{"paragraph A heading", "paragraph Text in the code page: caf\u00e9."})
 }
 
@@ -120,11 +121,11 @@ func TestEncryptedWordAgainstLibreOffice(tt *testing.T) {
 			{Text: "A heading behind a password"}, {Text: "The quick brown fox jumps over the lazy dog."}, {Text: "Caf\u00e9 na\u00efve: accents kept."},
 		}})
 		t.EncryptWord(streams, scheme, "secret word 1")
-		files[name] = t.Compound(streams)
+		files[name] = cfbtest.Compound(streams)
 	}
 	w := t.Word6Stream(0x0409, text)
 	t.EncryptWord6(w, "secret word 1")
-	files["xor6.doc"] = t.Compound(map[string][]byte{"WordDocument": w})
+	files["xor6.doc"] = cfbtest.Compound(map[string][]byte{"WordDocument": w})
 	args := []string{filepath.Join("testdata", "oracle_crypt.py"), filepath.Join(dir, "profile")}
 	for name, data := range files {
 		path := filepath.Join(dir, name)
@@ -194,7 +195,7 @@ func TestEncryptedPresentation(tt *testing.T) {
 			Props: []t.Prop{{ID: 15, Value: t.Wide("A company")}}}),
 	}}
 	streams := f.Encrypt(deck.all(), pptDoc, pictures, "hello")
-	doc := opens(tt, "presentation", t.Compound(streams), "hello", "RC4 CryptoAPI")
+	doc := opens(tt, "presentation", cfbtest.Compound(streams), "hello", "RC4 CryptoAPI")
 	wantLines(tt, "the slide", slideLines(&doc.Parts[0]), []string{"heading1 Behind a password", `image image/png 4x3 ""`})
 	if m := doc.Metadata; m.Title != "Kept from view" || len(m.Authors) != 1 || m.Authors[0] != "An author" || m.Extra["company"] != "A company" {
 		tt.Errorf("the properties: %+v", m)
@@ -205,14 +206,14 @@ func TestEncryptedPresentation(tt *testing.T) {
 	// A list of the sets that breaks off: what can be read, and a warning.
 	whole := streams["EncryptedSummary"]
 	streams["EncryptedSummary"] = whole[:len(whole)-30]
-	doc = opens(tt, "presentation with a damaged list", t.Compound(streams), "hello", "RC4 CryptoAPI")
+	doc = opens(tt, "presentation with a damaged list", cfbtest.Compound(streams), "hello", "RC4 CryptoAPI")
 	if w, ok := warning(doc.Warnings, gofastcore.WarnInputStreamDamaged); !ok || w.Message != "the property stream EncryptedSummary" || doc.Metadata.Title != "" && doc.Metadata.Title != "Kept from view" {
 		tt.Errorf("a damaged list: %+v, %+v", doc.Metadata, doc.Warnings)
 	}
 	// One that points outside the stream, or is noise: no more than that.
 	for _, n := range []int{0, 5, 8, 40} {
 		streams["EncryptedSummary"] = append([]byte(nil), whole[:n]...)
-		doc = opens(tt, "presentation with a cut stream", t.Compound(streams), "hello", "RC4 CryptoAPI")
+		doc = opens(tt, "presentation with a cut stream", cfbtest.Compound(streams), "hello", "RC4 CryptoAPI")
 		if _, ok := warning(doc.Warnings, gofastcore.WarnInputStreamDamaged); !ok {
 			tt.Errorf("a stream of %d bytes: %+v", n, doc.Warnings)
 		}

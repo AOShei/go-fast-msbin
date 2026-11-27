@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
+	"github.com/AOShei/go-fast-core/vba/vbatest"
 	"github.com/AOShei/go-fast-msbin"
 	t "github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
@@ -495,10 +497,10 @@ func TestDamagedWorkbooks(tt *testing.T) {
 
 // The macros of a workbook are in the stored part, after its sheets.
 func TestWorkbookWithMacros(tt *testing.T) {
-	streams := t.VBAStreams("_VBA_PROJECT_CUR/", 1252, t.VBAModule{Name: "Module1", Code: "Sub A()\r\nEnd Sub\r\n"})
+	streams := vbatest.VBAStreams("_VBA_PROJECT_CUR/", 1252, vbatest.VBAModule{Name: "Module1", Code: "Sub A()\r\nEnd Sub\r\n"})
 	streams["Workbook"] = t.Workbook(styles, t.Sheet{Name: "One", Records: [][]byte{t.RKInt(0, 0, xfGeneral, 1, false)}},
 		t.Sheet{Name: "Two", Records: [][]byte{t.RKInt(0, 0, xfGeneral, 2, false)}})
-	doc := mustExtract(tt, t.Compound(streams), nil)
+	doc := mustExtract(tt, cfbtest.Compound(streams), nil)
 	if len(doc.Parts) != 3 || doc.Parts[2].Kind != gofastcore.PartStored || doc.Parts[2].Number != 3 || doc.Parts[2].Blocks[0].Kind != gofastcore.KindCode {
 		tt.Fatalf("%d parts", len(doc.Parts))
 	}
@@ -516,7 +518,7 @@ func TestExcel95(tt *testing.T) {
 		// A text box, whose text is not read: an object of kind 6.
 		t.Rec(0x005D, t.Cat(t.U16(0x0015, 0x0012, 0x0006, 9, 0x4011), make([]byte, 12), t.U16(0, 0))...),
 	}
-	data := t.Compound(map[string][]byte{"Book": t.Workbook5(globals, t.Sheet{Name: "\xcb\xe8\xf1\xf2", Records: sheet}, t.Sheet{Name: "Two", State: 1})})
+	data := cfbtest.Compound(map[string][]byte{"Book": t.Workbook5(globals, t.Sheet{Name: "\xcb\xe8\xf1\xf2", Records: sheet}, t.Sheet{Name: "Two", State: 1})})
 	doc := mustExtract(tt, data, &gofastcore.Options{Cells: true})
 	if doc.Source.Format != "xls" || len(doc.Parts) != 2 || doc.Parts[0].Name != "Лист" || doc.Parts[1].Display != gofastcore.DisplayHidden {
 		tt.Fatalf("%+v", doc.Parts)

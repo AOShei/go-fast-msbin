@@ -14,8 +14,8 @@ import (
 	"sync"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin/internal/cfb"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
+	"github.com/AOShei/go-fast-core/cfb"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-msbin/internal/detect"
 	"github.com/AOShei/go-fast-msbin/internal/doc"
 	"github.com/AOShei/go-fast-msbin/internal/embed"

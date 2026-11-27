@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
 	"github.com/AOShei/go-fast-msbin"
-	"github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
 
 func extract(data []byte, opts *gofastcore.Options) (*gofastcore.Document, error) {
@@ -62,32 +62,32 @@ func TestFilesAreToldApart(t *testing.T) {
 		want string
 		err  error
 	}{
-		"word 97":            {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0200), "1Table": {}}), "doc: the document's text cannot be found", nil},
-		"word 97, xor":       {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x8100)}), "Word 97-2003 file, encrypted (XOR obfuscation): no password given", gofastcore.ErrPasswordRequired},
-		"word 97, rc4":       {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0300), "1Table": u16s(1, 1)}), "encrypted: what it says of its encryption cannot be read", gofastcore.ErrUnsupported},
-		"word 97, cryptoapi": {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0100), "0Table": u16s(3, 2)}), "encrypted: what it says of its encryption cannot be read", gofastcore.ErrUnsupported},
-		"word 95":            {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5DC, 104, 0)}), "the file information block is cut short", gofastcore.ErrMalformed},
-		"excel 97":           {msbintest.Compound(map[string][]byte{"Workbook": bof8}), "xls: the workbook lists no sheets", nil},
-		"excel 95":           {msbintest.Compound(map[string][]byte{"Book": bof5}), "xls: the workbook lists no sheets", nil},
-		"excel both":         {msbintest.Compound(map[string][]byte{"Book": bof5, "Workbook": bof8}), "xls: the workbook lists no sheets", nil},
-		"excel 97, xor":      {msbintest.Compound(map[string][]byte{"Workbook": append(bof8, record(0x002F, u16s(0, 1, 2)...)...)}), "encrypted (XOR obfuscation): no password given", gofastcore.ErrPasswordRequired},
-		"excel 97, rc4":      {msbintest.Compound(map[string][]byte{"Workbook": append(bof8, record(0x002F, u16s(1, 1, 1)...)...)}), "encrypted: what it says of its encryption cannot be read", gofastcore.ErrUnsupported},
-		"excel 97, capi":     {msbintest.Compound(map[string][]byte{"Workbook": append(bof8, record(0x002F, u16s(1, 4, 2)...)...)}), "encrypted: what it says of its encryption cannot be read", gofastcore.ErrUnsupported},
-		"powerpoint 97":      {msbintest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Current User": currentUser(0xE391C05F, 0x03F4)}), "ppt: the presentation's slides cannot be found", nil},
-		"powerpoint 95, new": {msbintest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Text_Content": {1}, "PersistentStorage Directory": {1}}), "PowerPoint 95 or older file: this generation of the format is not read", gofastcore.ErrUnsupported},
-		"powerpoint, capi":   {msbintest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Current User": currentUser(0xF3D1C4DF, 0x03F4)}), "encrypted: what it says of its encryption cannot be read", gofastcore.ErrUnsupported},
-		"powerpoint 95":      {msbintest.Compound(map[string][]byte{"PowerPoint Document": {1}, "PP40": {1}}), "PowerPoint 95 or older file: this generation of the format is not read", gofastcore.ErrUnsupported},
-		"encrypted package":  {msbintest.Compound(map[string][]byte{"EncryptedPackage": {1}, "EncryptionInfo": {1}}), "an encrypted Office Open XML package", gofastcore.ErrUnsupported},
-		"outlook message":    {msbintest.Compound(map[string][]byte{"__properties_version1.0": {1}}), "an Outlook message", gofastcore.ErrUnsupported},
-		"other compound":     {msbintest.Compound(map[string][]byte{"Contents": {1}}), "no Word, Excel or PowerPoint document in it", gofastcore.ErrUnsupported},
+		"word 97":            {cfbtest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0200), "1Table": {}}), "doc: the document's text cannot be found", nil},
+		"word 97, xor":       {cfbtest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x8100)}), "Word 97-2003 file, encrypted (XOR obfuscation): no password given", gofastcore.ErrPasswordRequired},
+		"word 97, rc4":       {cfbtest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0300), "1Table": u16s(1, 1)}), "encrypted: what it says of its encryption cannot be read", gofastcore.ErrUnsupported},
+		"word 97, cryptoapi": {cfbtest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0100), "0Table": u16s(3, 2)}), "encrypted: what it says of its encryption cannot be read", gofastcore.ErrUnsupported},
+		"word 95":            {cfbtest.Compound(map[string][]byte{"WordDocument": fib(0xA5DC, 104, 0)}), "the file information block is cut short", gofastcore.ErrMalformed},
+		"excel 97":           {cfbtest.Compound(map[string][]byte{"Workbook": bof8}), "xls: the workbook lists no sheets", nil},
+		"excel 95":           {cfbtest.Compound(map[string][]byte{"Book": bof5}), "xls: the workbook lists no sheets", nil},
+		"excel both":         {cfbtest.Compound(map[string][]byte{"Book": bof5, "Workbook": bof8}), "xls: the workbook lists no sheets", nil},
+		"excel 97, xor":      {cfbtest.Compound(map[string][]byte{"Workbook": append(bof8, record(0x002F, u16s(0, 1, 2)...)...)}), "encrypted (XOR obfuscation): no password given", gofastcore.ErrPasswordRequired},
+		"excel 97, rc4":      {cfbtest.Compound(map[string][]byte{"Workbook": append(bof8, record(0x002F, u16s(1, 1, 1)...)...)}), "encrypted: what it says of its encryption cannot be read", gofastcore.ErrUnsupported},
+		"excel 97, capi":     {cfbtest.Compound(map[string][]byte{"Workbook": append(bof8, record(0x002F, u16s(1, 4, 2)...)...)}), "encrypted: what it says of its encryption cannot be read", gofastcore.ErrUnsupported},
+		"powerpoint 97":      {cfbtest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Current User": currentUser(0xE391C05F, 0x03F4)}), "ppt: the presentation's slides cannot be found", nil},
+		"powerpoint 95, new": {cfbtest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Text_Content": {1}, "PersistentStorage Directory": {1}}), "PowerPoint 95 or older file: this generation of the format is not read", gofastcore.ErrUnsupported},
+		"powerpoint, capi":   {cfbtest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Current User": currentUser(0xF3D1C4DF, 0x03F4)}), "encrypted: what it says of its encryption cannot be read", gofastcore.ErrUnsupported},
+		"powerpoint 95":      {cfbtest.Compound(map[string][]byte{"PowerPoint Document": {1}, "PP40": {1}}), "PowerPoint 95 or older file: this generation of the format is not read", gofastcore.ErrUnsupported},
+		"encrypted package":  {cfbtest.Compound(map[string][]byte{"EncryptedPackage": {1}, "EncryptionInfo": {1}}), "an encrypted Office Open XML package", gofastcore.ErrUnsupported},
+		"outlook message":    {cfbtest.Compound(map[string][]byte{"__properties_version1.0": {1}}), "an Outlook message", gofastcore.ErrUnsupported},
+		"other compound":     {cfbtest.Compound(map[string][]byte{"Contents": {1}}), "no Word, Excel or PowerPoint document in it", gofastcore.ErrUnsupported},
 		"excel 4":            {append(record(0x0409, u16s(4, 0x10, 0)...), make([]byte, 600)...), "Excel 4 (BIFF4) file: this generation of the format is not read", gofastcore.ErrUnsupported},
 		"zip":                {append([]byte("PK\x03\x04"), make([]byte, 600)...), "a zip archive", gofastcore.ErrUnsupported},
 		"rtf":                {[]byte(`{\rtf1 hello}`), "an RTF document", gofastcore.ErrUnsupported},
 		"html":               {[]byte("\n<html><body>a table saved as .xls</body></html>"), "an XML or HTML document", gofastcore.ErrUnsupported},
 		"text":               {[]byte("just text"), "not a compound file", gofastcore.ErrUnsupported},
 		"empty":              {nil, "not a compound file", gofastcore.ErrUnsupported},
-		"cut in the header":  {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0)})[:100], "cut off inside its header", gofastcore.ErrMalformed},
-		"no directory":       {msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0)})[:512], "cannot be read", gofastcore.ErrMalformed},
+		"cut in the header":  {cfbtest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0)})[:100], "cut off inside its header", gofastcore.ErrMalformed},
+		"no directory":       {cfbtest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0)})[:512], "cannot be read", gofastcore.ErrMalformed},
 	} {
 		doc, err := extract(c.data, nil)
 		if c.err == nil {
@@ -118,7 +118,7 @@ func TestFilesAreToldApart(t *testing.T) {
 }
 
 func TestInputOverTheLimit(t *testing.T) {
-	data := msbintest.Compound(map[string][]byte{"Workbook": make([]byte, 5000)})
+	data := cfbtest.Compound(map[string][]byte{"Workbook": make([]byte, 5000)})
 	_, err := extract(data, &gofastcore.Options{Limits: gofastcore.Limits{MaxInputBytes: 1000}})
 	if !errors.Is(err, gofastcore.ErrLimitExceeded) {
 		t.Errorf("%v", err)

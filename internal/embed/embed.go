@@ -24,9 +24,9 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin/internal/cfb"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
-	"github.com/AOShei/go-fast-msbin/internal/codepage"
+	"github.com/AOShei/go-fast-core/cfb"
+	"github.com/AOShei/go-fast-core/charset"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-msbin/internal/detect"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
@@ -294,7 +294,7 @@ func native(b []byte, label string) (name string, data []byte) {
 	// the path the file came from. Both are in a code page the stream
 	// does not name: bytes above 0x7F are read as Windows-1252.
 	for _, raw := range [][]byte{shown, path} {
-		s, _ := codepage.Decode(1252, raw)
+		s, _ := charset.DecodeCodePage(1252, raw)
 		if i := strings.LastIndexAny(s, `\/`); i >= 0 {
 			s = s[i+1:]
 		}

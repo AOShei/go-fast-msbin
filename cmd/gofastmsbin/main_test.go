@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
+	"github.com/AOShei/go-fast-core/vba/vbatest"
 	"github.com/AOShei/go-fast-msbin"
 	"github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
@@ -85,14 +87,14 @@ func sample(t *testing.T, dir, name string) string {
 	fib := make([]byte, 68)
 	copy(fib, []byte{0xEC, 0xA5, 0xC1, 0x00})
 	fib[11] = 0x02
-	streams := msbintest.VBAStreams("Macros/", 1252, msbintest.VBAModule{Name: "Module1", Code: "Sub A()\r\n  MsgBox \"<b>\"\r\nEnd Sub\r\n"})
+	streams := vbatest.VBAStreams("Macros/", 1252, vbatest.VBAModule{Name: "Module1", Code: "Sub A()\r\n  MsgBox \"<b>\"\r\nEnd Sub\r\n"})
 	streams["WordDocument"], streams["1Table"] = fib, []byte{}
 	streams["\x05SummaryInformation"] = msbintest.PropertyStream(msbintest.Section{Format: msbintest.FmtSummary, CodePage: 1252,
 		Props: []msbintest.Prop{{ID: 2, Value: "A title & more"}}})
 	streams["ObjectPool/_1/WordDocument"], streams["ObjectPool/_1/1Table"] = fib, []byte{}
 	streams["ObjectPool/_2/Package"] = []byte("PK\x03\x04")
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, msbintest.Compound(streams), 0o600); err != nil {
+	if err := os.WriteFile(path, cfbtest.Compound(streams), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -284,7 +286,7 @@ func TestCommandReadsEmbeddedFiles(t *testing.T) {
 	streams["ObjectPool/_1000000002/1Table"] = inner["1Table"]
 	streams["ObjectPool/_1000000003/CONTENTS"] = []byte("%PDF-1.4 not an Office file")
 	path := filepath.Join(t.TempDir(), "outer.doc")
-	if err := os.WriteFile(path, msbintest.Compound(streams), 0o600); err != nil {
+	if err := os.WriteFile(path, cfbtest.Compound(streams), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var out, errs bytes.Buffer

@@ -204,21 +204,19 @@ only; a program that uses it decides what reads embedded files, through
 | `internal/xls` | The Excel reader: records, shared strings, cell formats, sheets, formulas, lists, shapes, charts |
 | `internal/doc` | The Word reader: pieces, properties, styles, lists, tables, notes, fields, text boxes, pictures; Word 6/95 |
 | `internal/ppt` | The PowerPoint reader: edits and the persist directory, masters and their text styles, slides, shapes, text, notes, comments |
-| `internal/hidden` | Spans and what is declared about the display of text, settled on a block |
 | `internal/ptg` | Compiled formulas back to text |
 | `internal/officeart`, `internal/media` | The drawing layer the three formats share: shapes, their properties, pictures |
 | `internal/chart` | A chart's data as a caption and a table |
 | `internal/grid` | The cells of a sheet into table blocks, as go-fast-ooxml does it |
 | `internal/crypt` | The three schemes of encryption: a password checked, and the keys it gives |
 | `internal/oleps` | Property sets: the document's properties |
-| `internal/vba`, `internal/stored` | The source of VBA modules, and the stored part they go to |
+| `internal/stored` | The stored part that the source of VBA modules goes to |
 | `internal/embed` | Embedded objects, handed on as files |
 | `internal/mtef` | Equations of the Equation Editor and MathType (MTEF 2, 3 and 5), written in UnicodeMath |
 | `internal/unit`, `internal/warn` | What the readers of the three formats share: the stream they read from, a part's result, the wording of bounds and repeated warnings |
-| `internal/cfb` | Compound files, the container of all three formats: sectors, allocation tables, directory, streams; writing one, and writing a storage of a file out as a file of its own |
 | `internal/detect` | What a file is: format, generation, encryption |
-| `internal/codepage`, `internal/symbol`, `internal/label`, `internal/clean` | Copied from the other go-fast libraries: code pages, symbol fonts, list labels, the text conventions of the shared model. Number formats are go-fast-core's package `numfmt` |
-| `internal/msbintest` | Test harness: a second writer of compound files; writers of property sets, VBA projects, workbooks, Word documents and presentations, and of the three schemes of encryption; the corpus manifest |
+| go-fast-core's `cfb`, `charset`, `clean`, `symbol`, `label`, `hidden`, `vba`, `numfmt` | What the go-fast libraries share, imported: compound files (the container of all three formats), code pages, the text conventions of the shared model, symbol fonts, list labels, what is declared about the display of text, the source of VBA modules, number formats |
+| `internal/msbintest` | Test harness: writers of property sets, workbooks, Word documents and presentations, and of the three schemes of encryption; the corpus manifest |
 | `testdata/oracle_shared.py`, `oracle_xls.py`, `oracle_lo.py`, `oracle_crypt.py` | What olefile and olevba read of each corpus file, what xlrd reads of each workbook and what LibreOffice shows of it, for the tests that compare the library with them; and LibreOffice opening, with a password, what the test writer encrypts |
 | `testdata/corpus.json`, `testdata/fetch.py` | Manifest of 2,528 real files from the test suites of Apache POI, Apache Tika and LibreOffice, from data.gov.uk and from Govdocs1, and the script that downloads them. The files are not in the repository. One file in five is held out: scored, never looked at |
 | `bench` | The baselines of the tools in use today (`baseline.md`) and the script that measures them |

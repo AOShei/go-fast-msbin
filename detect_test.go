@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
 	"github.com/AOShei/go-fast-msbin"
 	"github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
@@ -48,22 +49,22 @@ func TestDetect(t *testing.T) {
 		data []byte
 		want string
 	}{
-		{"a Word document", msbintest.Compound(wordFile()), "doc"},
-		{"a workbook", msbintest.Compound(bookFile()), "xls"},
-		{"a workbook of Excel 95", msbintest.Compound(map[string][]byte{"Book": record(0x0809, u16s(0x0500, 5, 0, 0)...)}), "xls"},
-		{"a presentation", msbintest.Compound(deck), "ppt"},
-		{"a presentation of PowerPoint 95, which is refused", msbintest.Compound(map[string][]byte{"PP40": {1}}), "ppt"},
-		{"a Word document of Word 2's kind in a compound file, which is refused", msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5DB, 33, 0)}), "doc"},
-		{"a Word document with a workbook in it", msbintest.Compound(with(wordFile(), map[string][]byte{"ObjectPool/_1/Workbook": bookFile()["Workbook"]})), "doc"},
-		{"a file with sectors of 4096 bytes", msbintest.CompoundV4(map[string][]byte{"Book": record(0x0809, u16s(0x0500, 5, 0, 0)...), "a/b": make([]byte, 5000)}), "xls"},
-		{"an Outlook message", msbintest.Compound(map[string][]byte{"__properties_version1.0": make([]byte, 32), "__substg1.0_0037001F": {'a', 0}}), ""},
-		{"a workbook only inside a storage", msbintest.Compound(map[string][]byte{"MBD1/Workbook": bookFile()["Workbook"], "\x01CompObj": {1}}), ""},
-		{"a compound file with nothing in it", msbintest.Compound(map[string][]byte{}), ""},
+		{"a Word document", cfbtest.Compound(wordFile()), "doc"},
+		{"a workbook", cfbtest.Compound(bookFile()), "xls"},
+		{"a workbook of Excel 95", cfbtest.Compound(map[string][]byte{"Book": record(0x0809, u16s(0x0500, 5, 0, 0)...)}), "xls"},
+		{"a presentation", cfbtest.Compound(deck), "ppt"},
+		{"a presentation of PowerPoint 95, which is refused", cfbtest.Compound(map[string][]byte{"PP40": {1}}), "ppt"},
+		{"a Word document of Word 2's kind in a compound file, which is refused", cfbtest.Compound(map[string][]byte{"WordDocument": fib(0xA5DB, 33, 0)}), "doc"},
+		{"a Word document with a workbook in it", cfbtest.Compound(with(wordFile(), map[string][]byte{"ObjectPool/_1/Workbook": bookFile()["Workbook"]})), "doc"},
+		{"a file with sectors of 4096 bytes", cfbtest.CompoundV4(map[string][]byte{"Book": record(0x0809, u16s(0x0500, 5, 0, 0)...), "a/b": make([]byte, 5000)}), "xls"},
+		{"an Outlook message", cfbtest.Compound(map[string][]byte{"__properties_version1.0": make([]byte, 32), "__substg1.0_0037001F": {'a', 0}}), ""},
+		{"a workbook only inside a storage", cfbtest.Compound(map[string][]byte{"MBD1/Workbook": bookFile()["Workbook"], "\x01CompObj": {1}}), ""},
+		{"a compound file with nothing in it", cfbtest.Compound(map[string][]byte{}), ""},
 		{"an RTF document", []byte(`{\rtf1 }`), ""},
 		{"a zip archive", []byte("PK\x03\x04"), ""},
 		{"a workbook of Excel 4, which is no compound file", record(0x0409, u16s(0, 16, 0)...), ""},
 		{"nothing", nil, ""},
-		{"a large workbook", msbintest.Compound(map[string][]byte{"Workbook": big, "Other": big}), "xls"},
+		{"a large workbook", cfbtest.Compound(map[string][]byte{"Workbook": big, "Other": big}), "xls"},
 	} {
 		r := &counted{r: bytes.NewReader(c.data)}
 		got := gofastmsbin.Detect(r, int64(len(c.data)))

@@ -5,6 +5,8 @@ import (
 	"math"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
 )
 
 // This file writes workbook streams ([MS-XLS]) for the tests, record by
@@ -379,7 +381,7 @@ func Workbook(globals [][]byte, sheets ...Sheet) []byte {
 
 // BookFile returns a compound file holding the workbook stream.
 func BookFile(stream []byte) []byte {
-	return Compound(map[string][]byte{"Workbook": stream})
+	return cfbtest.Compound(map[string][]byte{"Workbook": stream})
 }
 
 // Tokens of compiled formulas ([MS-XLS] 2.5.198), for FormulaTokens and

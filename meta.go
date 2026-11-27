@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-msbin/internal/oleps"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
@@ -129,7 +129,7 @@ func metadata(has func(name string) bool, open func(name string) (unit.Stream, e
 					}
 					key, n := clean.String([]byte(p.Name), clean.Prose)
 					removed += n
-					if clean.LabelCut(key) {
+					if _, cut := clean.LabelCut(key); cut {
 						lost.AddCut(warn.CapPropertyName, 1, int64(len(key)-clean.MaxLabel))
 					}
 					key = strings.ToLower(clean.Label(key))

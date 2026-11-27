@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
+	"github.com/AOShei/go-fast-core/clean"
 )
 
 // Cap is a fixed bound of this library that can leave content out. Each

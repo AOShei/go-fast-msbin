@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-27
+
 ### Changed
 
 - Requires `go-fast-core` v0.1.13 (was v0.1.9). What the go-fast

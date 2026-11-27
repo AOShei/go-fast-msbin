@@ -11,9 +11,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
-	"github.com/AOShei/go-fast-msbin/internal/hidden"
-	"github.com/AOShei/go-fast-msbin/internal/symbol"
+	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/hidden"
+	"github.com/AOShei/go-fast-core/symbol"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
 )
 

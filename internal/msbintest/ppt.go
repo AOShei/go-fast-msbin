@@ -3,6 +3,8 @@ package msbintest
 import (
 	"bytes"
 	"compress/zlib"
+	"encoding/binary"
+	"unicode/utf16"
 )
 
 // This file writes PowerPoint presentations ([MS-PPT]) for the tests, on
@@ -399,4 +401,13 @@ func (f *PPTFile) Edit(doc uint32, objects map[uint32][]byte) {
 func (f *PPTFile) Streams() map[string][]byte {
 	user := Cat(PPTAtom(0x0FF6, 0, Cat(U32(20, 0xE391C05F, f.last), U16(0, 0x03F4), []byte{3, 0, 0, 0})...), U32(8))
 	return map[string][]byte{"PowerPoint Document": bytes.Clone(f.stream), "Current User": user}
+}
+
+// utf16le is s in UTF-16, little-endian.
+func utf16le(s string) []byte {
+	var out []byte
+	for _, u := range utf16.Encode([]rune(s)) {
+		out = binary.LittleEndian.AppendUint16(out, u)
+	}
+	return out
 }

@@ -17,9 +17,9 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin/internal/cfb"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
-	"github.com/AOShei/go-fast-msbin/internal/vba"
+	"github.com/AOShei/go-fast-core/cfb"
+	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/vba"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
 )
 

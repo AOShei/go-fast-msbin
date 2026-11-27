@@ -4,8 +4,8 @@ import (
 	"unicode/utf16"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
-	"github.com/AOShei/go-fast-msbin/internal/codepage"
+	"github.com/AOShei/go-fast-core/charset"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-msbin/internal/grid"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
 )
@@ -229,7 +229,7 @@ func (sh *sheet) hyperlink(b []byte) {
 						break
 					}
 				}
-				path, _ = codepage.Decode(1252, ansi)
+				path, _ = charset.DecodeCodePage(1252, ansi)
 			}
 			for ; up > 0 && up < 64; up-- {
 				path = `..\` + path

@@ -8,7 +8,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/AOShei/go-fast-msbin/internal/cfb"
+	"github.com/AOShei/go-fast-core/cfb"
 )
 
 // BIFF8 is the version of a workbook of Excel 97 to 2003.

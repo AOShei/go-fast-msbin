@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
 	t "github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
 
@@ -30,7 +31,7 @@ func wordFileOf(d t.DocFile) []byte {
 	if d.Styles == nil {
 		d.Styles = docStyles
 	}
-	return t.Compound(t.WordStreams(d))
+	return cfbtest.Compound(t.WordStreams(d))
 }
 
 // lines gives the blocks of a part as lines: kind, level, marker, text.
@@ -333,7 +334,7 @@ func TestWordEquations(tt *testing.T) {
 		handed = append(handed, name)
 		return nil, gofastcore.ErrUnsupported
 	}}
-	doc := mustExtract(tt, t.Compound(streams), opts)
+	doc := mustExtract(tt, cfbtest.Compound(streams), opts)
 	wantLines(tt, "equations", lines(&doc.Parts[0]), []string{
 		"paragraph The energy is mc^2, he wrote.", "note:field EMBED Equation.3",
 		"formula x^2", "note:field EMBED Equation.3",
@@ -350,7 +351,7 @@ func TestWordEquations(tt *testing.T) {
 	note := para("\x02 See ", 1004, ".")
 	streams = t.WordStreams(t.DocFile{Styles: docStyles, Main: []t.DocPara{{Text: "A claim.\x02"}}, Footnotes: [][]t.DocPara{{note}}})
 	streams["ObjectPool/_1004/Equation Native"] = t.EquationNative(t.MTEF3(t.EqLine(t.EqString(t.EqVariable, "a"), t.EqChar(t.EqSymbol, 0xE123))))
-	doc = mustExtract(tt, t.Compound(streams), nil)
+	doc = mustExtract(tt, cfbtest.Compound(streams), nil)
 	wantLines(tt, "an equation in a footnote", lines(&doc.Parts[0]), []string{"paragraph A claim.", "footnote[1] See a\uFFFD. EMBED Equation.3"})
 	if w, ok := warning(doc.Parts[0].Warnings, gofastcore.WarnTextUnmappedGlyphs); !ok || !strings.HasPrefix(w.Message, "1 characters of equations") {
 		tt.Errorf("warnings: %+v", doc.Parts[0].Warnings)
@@ -408,12 +409,12 @@ func TestDamagedWordDocuments(tt *testing.T) {
 				bad := append([]byte(nil), good...)
 				bad[i] = v
 				streams[name] = bad
-				doc, err := extract(t.Compound(streams), opts)
+				doc, err := extract(cfbtest.Compound(streams), opts)
 				checkOutcome(tt, doc, err)
 			}
 			if i%7 == 0 {
 				streams[name] = good[:i]
-				doc, err := extract(t.Compound(streams), opts)
+				doc, err := extract(cfbtest.Compound(streams), opts)
 				checkOutcome(tt, doc, err)
 			}
 		}
@@ -431,7 +432,7 @@ func TestWord95(tt *testing.T) {
 		"An open \x13 mark, and text after it.\r" +
 		"Last paragraph, with no mark"
 	stream := t.Word6Stream(0x0419, text, "\x02 \xd1\xed\xee\xf1\xea\xe0.")
-	doc := mustExtract(tt, t.Compound(map[string][]byte{"WordDocument": stream}), nil)
+	doc := mustExtract(tt, cfbtest.Compound(map[string][]byte{"WordDocument": stream}), nil)
 	want := []string{
 		"paragraph Привет, мир.", "footnote[1] Сноска.",
 		"table a|b/c|d", "paragraph Page 7 of 9.", "paragraph An open mark, and text after it.", "paragraph Last paragraph, with no mark",
@@ -447,9 +448,9 @@ func TestWord95(tt *testing.T) {
 	for i := 0; i < len(stream); i += 3 {
 		bad := append([]byte(nil), stream...)
 		bad[i] ^= 0x5A
-		d, err := extract(t.Compound(map[string][]byte{"WordDocument": bad}), nil)
+		d, err := extract(cfbtest.Compound(map[string][]byte{"WordDocument": bad}), nil)
 		checkOutcome(tt, d, err)
-		d, err = extract(t.Compound(map[string][]byte{"WordDocument": stream[:i]}), nil)
+		d, err = extract(cfbtest.Compound(map[string][]byte{"WordDocument": stream[:i]}), nil)
 		checkOutcome(tt, d, err)
 	}
 }

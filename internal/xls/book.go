@@ -2,6 +2,7 @@ package xls
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"io"
 	"math"
@@ -12,12 +13,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/numfmt"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
+	"github.com/AOShei/go-fast-core/symbol"
 	"github.com/AOShei/go-fast-msbin/internal/officeart"
 	"github.com/AOShei/go-fast-msbin/internal/ptg"
 	"github.com/AOShei/go-fast-msbin/internal/stored"
-	"github.com/AOShei/go-fast-msbin/internal/symbol"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
 )
@@ -81,12 +82,13 @@ type Book struct {
 	date1904 bool
 	// biff5 says the workbook is of Excel 5 or 95, whose strings are
 	// bytes in the code page cp.
-	biff5  bool
-	cp     int
-	refs   []sheetRef
-	styles []cellStyle
-	text   string   // the shared strings, one after another
-	ends   []uint32 // where each ends in text
+	biff5   bool
+	cp      int
+	cpNamed int // the code page the file names, where cp is not it
+	refs    []sheetRef
+	styles  []cellStyle
+	text    string   // the shared strings, one after another
+	ends    []uint32 // where each ends in text
 	// rich has, for the shared strings that change font partway, where
 	// each change is and which symbol font the text is in from there, if
 	// it is one. It is kept only for a workbook that has a symbol font.
@@ -249,7 +251,14 @@ func (b *Book) globals() {
 				case 0x8001:
 					b.cp = 1252
 				default:
-					b.cp = cp
+					b.cp, b.cpNamed = cp, cp
+					if cp == 1200 || cp == 1201 {
+						// UTF-16 is not a code page of strings of
+						// bytes. They are read as in a code page that
+						// is not known: the ASCII kept, the rest
+						// U+FFFD and counted.
+						b.cp = cpNotOfBytes
+					}
 				}
 				c.cp = b.cp
 			}
@@ -632,7 +641,7 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 	out = append(out, unit.Summarize(tallies, b.damaged)...)
 	if b.undecoded > 0 {
 		out = append(out, gofastcore.Warning{Code: gofastcore.WarnTextUnmappedGlyphs, Severity: gofastcore.SeverityWarning,
-			Message: undecodedMessage(b.undecoded, b.cp)})
+			Message: undecodedMessage(b.undecoded, cmp.Or(b.cpNamed, b.cp))})
 	}
 	if b.removed > 0 {
 		out = append(out, gofastcore.Warning{Code: gofastcore.WarnTextControlCharactersRemoved, Severity: gofastcore.SeverityInfo,
@@ -642,6 +651,11 @@ func (b *Book) Summary(tallies []*unit.Tally) []gofastcore.Warning {
 }
 
 // undecodedMessage says how many characters a code page did not give.
+// cpNotOfBytes stands for a code page the file names that strings of
+// bytes cannot be in. No code page has the number, so nothing above
+// ASCII is decoded.
+const cpNotOfBytes = -1
+
 func undecodedMessage(n, cp int) string {
 	return strconv.Itoa(n) + " characters in code page " + strconv.Itoa(cp) + ", which it does not define or which is not known here, are U+FFFD"
 }

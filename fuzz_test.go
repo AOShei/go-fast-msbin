@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
+	"github.com/AOShei/go-fast-core/vba/vbatest"
 	"github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
 
@@ -38,13 +40,13 @@ func checkOutcome(t testing.TB, doc *gofastcore.Document, err error) {
 // call must return a valid document or an error that wraps one of the
 // shared errors; it must not panic, hang or exhaust memory.
 func FuzzExtract(f *testing.F) {
-	f.Add(msbintest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0300), "1Table": u16s(1, 1)}))
-	f.Add(msbintest.Compound(map[string][]byte{"Workbook": append(record(0x0809, u16s(0x0600, 5, 0, 0, 0, 0, 0, 0)...), record(0x002F, u16s(1, 4, 2)...)...)}))
-	f.Add(msbintest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Current User": currentUser(0xF3D1C4DF, 0x03F4)}))
-	f.Add(msbintest.CompoundV4(map[string][]byte{"Book": record(0x0809, u16s(0x0500, 5, 0, 0)...), "a/b": make([]byte, 5000)}))
+	f.Add(cfbtest.Compound(map[string][]byte{"WordDocument": fib(0xA5EC, 0x00C1, 0x0300), "1Table": u16s(1, 1)}))
+	f.Add(cfbtest.Compound(map[string][]byte{"Workbook": append(record(0x0809, u16s(0x0600, 5, 0, 0, 0, 0, 0, 0)...), record(0x002F, u16s(1, 4, 2)...)...)}))
+	f.Add(cfbtest.Compound(map[string][]byte{"PowerPoint Document": {1}, "Current User": currentUser(0xF3D1C4DF, 0x03F4)}))
+	f.Add(cfbtest.CompoundV4(map[string][]byte{"Book": record(0x0809, u16s(0x0500, 5, 0, 0)...), "a/b": make([]byte, 5000)}))
 	f.Add([]byte(`{\rtf1 }`))
 	// Properties, macros and embedded objects of every shape.
-	shared := with(wordFile(), msbintest.VBAStreams("Macros/", 1252, msbintest.VBAModule{Name: "M", Code: "Sub A()\r\nEnd Sub\r\n"}))
+	shared := with(wordFile(), vbatest.VBAStreams("Macros/", 1252, vbatest.VBAModule{Name: "M", Code: "Sub A()\r\nEnd Sub\r\n"}))
 	shared["\x05SummaryInformation"] = msbintest.PropertyStream(msbintest.Section{Format: msbintest.FmtSummary, CodePage: 1252,
 		Props: []msbintest.Prop{{ID: 2, Value: "title"}, {ID: 12, Value: time.Unix(1e9, 0)}}})
 	shared["\x05DocumentSummaryInformation"] = msbintest.PropertyStream(
@@ -55,19 +57,19 @@ func FuzzExtract(f *testing.F) {
 	shared["ObjectPool/_3/Workbook"] = bookFile()["Workbook"]
 	shared["ObjectPool/_3/MBD00000001/WordDocument"] = wordFile()["WordDocument"]
 	shared["ObjectPool/_4/\x01Ole"] = []byte{1, 0, 0, 2, 1, 0, 0, 0}
-	f.Add(msbintest.Compound(shared))
+	f.Add(cfbtest.Compound(shared))
 	// A workbook, with macros beside it.
-	workbook := msbintest.VBAStreams("_VBA_PROJECT_CUR/", 1252, msbintest.VBAModule{Name: "M", Code: "Sub A()\r\nEnd Sub\r\n"})
+	workbook := vbatest.VBAStreams("_VBA_PROJECT_CUR/", 1252, vbatest.VBAModule{Name: "M", Code: "Sub A()\r\nEnd Sub\r\n"})
 	workbook["Workbook"] = msbintest.Workbook(append(append([][]byte(nil), styles...), msbintest.SST(msbintest.Plain("a", "b")...)),
 		msbintest.Sheet{Name: "S", Records: [][]byte{msbintest.LabelSST(0, 0, xfGeneral, 0), msbintest.MulRK(0, 1, xfTwo, 1, 2), msbintest.Comment(0, 0, 1, "A", "note")}},
 		msbintest.Sheet{Name: "T", State: 2, Records: [][]byte{msbintest.Number(0, 0, xfDate, 36526)}})
-	f.Add(msbintest.Compound(workbook))
+	f.Add(cfbtest.Compound(workbook))
 	// A Word document, and one of Word 95.
-	f.Add(msbintest.Compound(msbintest.WordStreams(msbintest.DocFile{Styles: docStyles, Main: []msbintest.DocPara{
+	f.Add(cfbtest.Compound(msbintest.WordStreams(msbintest.DocFile{Styles: docStyles, Main: []msbintest.DocPara{
 		{Text: "A heading", Style: 1}, {Text: "Text \x13 PAGE \x14 7\x15 and a note.\x02"}}, Footnotes: [][]msbintest.DocPara{{{Text: "\x02 note"}}}})))
-	f.Add(msbintest.Compound(map[string][]byte{"WordDocument": msbintest.Word6Stream(0x0419, "\xcf\xf0\x02\ra\x07b\x07\x07\x13 PAGE \x14"+"7\x15\r", "\x02 n")}))
+	f.Add(cfbtest.Compound(map[string][]byte{"WordDocument": msbintest.Word6Stream(0x0419, "\xcf\xf0\x02\ra\x07b\x07\x07\x13 PAGE \x14"+"7\x15\r", "\x02 n")}))
 	// A workbook of Excel 95.
-	f.Add(msbintest.Compound(map[string][]byte{"Book": msbintest.Workbook5(
+	f.Add(cfbtest.Compound(map[string][]byte{"Book": msbintest.Workbook5(
 		[][]byte{msbintest.CodePage(1251), msbintest.Font5("Arial"), msbintest.Format5(164, "0.0"), msbintest.XF5(0, 0), msbintest.XF5(0, 164)},
 		msbintest.Sheet{Name: "S", Records: [][]byte{msbintest.Label5(0, 0, 0, "\xcf\xf0"), msbintest.Number(0, 1, 1, 2.25), msbintest.Note5(0, 0, "note"),
 			msbintest.Formula5String(1, 0, 0, "x", msbintest.Cat(msbintest.PtgRef5(0, 0, true, true), msbintest.PtgStr5("x"), msbintest.PtgOp(8))),
@@ -183,7 +185,7 @@ func FuzzWord(f *testing.F) {
 		}
 		timer := time.AfterFunc(5*time.Second, func() { panic("Extract took more than 5s") })
 		defer timer.Stop()
-		file := msbintest.Compound(map[string][]byte{"WordDocument": word, "1Table": table, "0Table": table, "Data": table})
+		file := cfbtest.Compound(map[string][]byte{"WordDocument": word, "1Table": table, "0Table": table, "Data": table})
 		doc, err := extract(file, &gofastcore.Options{Spans: true, Images: gofastcore.ImagesData})
 		checkOutcome(t, doc, err)
 		plain, err2 := extract(file, &gofastcore.Options{Limits: gofastcore.Limits{MaxTextBytes: 200}})
@@ -212,7 +214,7 @@ func FuzzPresentation(f *testing.F) {
 		file.Edit(1, map[uint32][]byte{1: doc, 2: master, 10: slide, 11: notes})
 		streams := file.Streams()
 		streams["Pictures"] = pictures
-		data := msbintest.Compound(streams)
+		data := cfbtest.Compound(streams)
 		out, err := extract(data, &gofastcore.Options{Spans: true, Images: gofastcore.ImagesData})
 		checkOutcome(t, out, err)
 		small, err2 := extract(data, &gofastcore.Options{Limits: gofastcore.Limits{MaxTextBytes: 200}})
@@ -251,11 +253,11 @@ func FuzzEncrypted(f *testing.F) {
 		var data []byte
 		switch kind % 3 {
 		case 0:
-			data = msbintest.Compound(map[string][]byte{"Workbook": a})
+			data = cfbtest.Compound(map[string][]byte{"Workbook": a})
 		case 1:
-			data = msbintest.Compound(map[string][]byte{"WordDocument": a, "1Table": b, "0Table": b, "Data": b})
+			data = cfbtest.Compound(map[string][]byte{"WordDocument": a, "1Table": b, "0Table": b, "Data": b})
 		default:
-			data = msbintest.Compound(map[string][]byte{"PowerPoint Document": a, "Pictures": b, "EncryptedSummary": b, "Current User": user})
+			data = cfbtest.Compound(map[string][]byte{"PowerPoint Document": a, "Pictures": b, "EncryptedSummary": b, "Current User": user})
 		}
 		doc, err := extract(data, &gofastcore.Options{Password: "pw", Images: gofastcore.ImagesData})
 		checkOutcome(t, doc, err)

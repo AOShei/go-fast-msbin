@@ -8,8 +8,8 @@ import (
 	"io"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin/internal/cfb"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
+	"github.com/AOShei/go-fast-core/cfb"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-msbin/internal/detect"
 )
 

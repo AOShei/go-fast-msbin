@@ -23,7 +23,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/AOShei/go-fast-msbin/internal/symbol"
+	"github.com/AOShei/go-fast-core/symbol"
 )
 
 // Stream is the name of the stream of an embedded object that holds an

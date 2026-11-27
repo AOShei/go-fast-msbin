@@ -1,7 +1,7 @@
 package xls
 
 import (
-	"github.com/AOShei/go-fast-msbin/internal/clean"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-msbin/internal/ptg"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
 )

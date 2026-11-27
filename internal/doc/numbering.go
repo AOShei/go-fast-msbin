@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/AOShei/go-fast-msbin/internal/label"
+	"github.com/AOShei/go-fast-core/label"
 )
 
 // The numbering of lists: the definitions, and the counting of labels.

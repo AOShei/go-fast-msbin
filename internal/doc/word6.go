@@ -8,8 +8,8 @@ import (
 	"unicode"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
-	"github.com/AOShei/go-fast-msbin/internal/codepage"
+	"github.com/AOShei/go-fast-core/charset"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-msbin/internal/stored"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
@@ -129,8 +129,10 @@ func Open6(stream []byte, opts *gofastcore.Options, cfg Config) (*Doc6, error) {
 		}
 		if len(sets) == 1 {
 			for chs := range sets {
-				if cp := codepage.ForCharset(int(chs)); cp > 0 && codepage.Known(cp) {
-					d.cp = cp
+				if cp := charset.ForCharset(int(chs)); cp > 0 {
+					if _, ok := charset.CodePage(cp); ok {
+						d.cp = cp
+					}
 				}
 			}
 		}
@@ -409,7 +411,7 @@ func (r *reader6) story(cp, limit int64) []gofastcore.Block {
 			r.codes = r.codes[:0]
 		}
 		code = code[:0]
-		text, undecoded := codepage.Decode(d.cp, raw)
+		text, undecoded := charset.DecodeCodePage(d.cp, raw)
 		r.undecoded += undecoded
 		text, removed := clean.String([]byte(text), clean.Prose)
 		r.removed += removed
@@ -472,7 +474,7 @@ func (r *reader6) story(cp, limit int64) []gofastcore.Block {
 	}
 	// Text after the last paragraph mark.
 	if len(raw) > 0 && !r.cut {
-		text, undecoded := codepage.Decode(d.cp, raw)
+		text, undecoded := charset.DecodeCodePage(d.cp, raw)
 		r.undecoded += undecoded
 		text, _ = clean.String([]byte(text), clean.Prose)
 		if text != "" && r.room.Take(gofastcore.BlockCost+len(text)) {

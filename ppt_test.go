@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/cfb/cfbtest"
+	"github.com/AOShei/go-fast-core/vba/vbatest"
 	gofastmsbin "github.com/AOShei/go-fast-msbin"
 	t "github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
@@ -94,7 +96,7 @@ func (d pptDeck) all() map[uint32][]byte {
 	return objects
 }
 
-func (d pptDeck) bytes() []byte { return t.Compound(d.file().Streams()) }
+func (d pptDeck) bytes() []byte { return cfbtest.Compound(d.file().Streams()) }
 
 // slideLines gives the blocks of a slide in a line each: kind, level and
 // marker, what is declared of its display, and its text.
@@ -295,7 +297,7 @@ func TestMasterTextAndFooters(tt *testing.T) {
 	}
 	streams := deck.file().Streams()
 	streams["Pictures"] = pictures
-	doc := mustExtract(tt, t.Compound(streams), nil)
+	doc := mustExtract(tt, cfbtest.Compound(streams), nil)
 	wantLines(tt, "the title slide", slideLines(&doc.Parts[0]), []string{
 		"heading1 Opening", "header The Company", `image image/png 4x3 ""`,
 	})
@@ -304,7 +306,7 @@ func TestMasterTextAndFooters(tt *testing.T) {
 	})
 	wantLines(tt, "a slide that does not follow its master", slideLines(&doc.Parts[2]), []string{"heading1 Alone", "footer Page 3"})
 	// Without pictures the picture is not given.
-	doc = mustExtract(tt, t.Compound(streams), &gofastcore.Options{Images: gofastcore.ImagesNone})
+	doc = mustExtract(tt, cfbtest.Compound(streams), &gofastcore.Options{Images: gofastcore.ImagesNone})
 	wantLines(tt, "no pictures", slideLines(&doc.Parts[0]), []string{"heading1 Opening", "header The Company"})
 }
 
@@ -375,14 +377,14 @@ func TestLaterEditsWin(tt *testing.T) {
 	f := deck.file()
 	f.Edit(pptDoc, map[uint32][]byte{10: t.PPTContainer(t.PPTSlide, 0, t.PPTSlideAtom(1, masterID, 0, true),
 		t.PPTShapes(t.PPTShape{Top: 100, Left: 100, Right: 900, Bottom: 300, Text: t.PPTText(4, "as saved again")}.Bytes()))})
-	doc := mustExtract(tt, t.Compound(f.Streams()), nil)
+	doc := mustExtract(tt, cfbtest.Compound(f.Streams()), nil)
 	wantLines(tt, "after two edits", slideLines(&doc.Parts[0]), []string{"paragraph as saved again"})
 
 	// A file whose Current User stream does not lead to the last edit is
 	// read from the last edit its stream holds, and says so.
 	streams := f.Streams()
 	streams["Current User"] = []byte("someone")
-	doc = mustExtract(tt, t.Compound(streams), nil)
+	doc = mustExtract(tt, cfbtest.Compound(streams), nil)
 	wantLines(tt, "no current user", slideLines(&doc.Parts[0]), []string{"paragraph as saved again"})
 	if _, ok := warning(doc.Warnings, gofastcore.WarnInputRepaired); !ok {
 		tt.Errorf("warnings: %+v", doc.Warnings)
@@ -394,7 +396,7 @@ func TestLaterEditsWin(tt *testing.T) {
 	for name, data := range f.Streams() {
 		dual["PP97_DUALSTORAGE/"+name] = data
 	}
-	doc = mustExtract(tt, t.Compound(dual), nil)
+	doc = mustExtract(tt, cfbtest.Compound(dual), nil)
 	wantLines(tt, "dual storage", slideLines(&doc.Parts[0]), []string{"paragraph as saved again"})
 }
 
@@ -462,7 +464,7 @@ func TestPresentationEquations(tt *testing.T) {
 		t.EqTmpl(15, 0, t.EqNull(), t.EqLine(t.EqString(t.EqNumber, "2")))))
 	strange := t.MTEF3(t.EqLine(t.EqString(t.EqVariable, "a"), t.EqChar(t.EqSymbol, 0xE123)))
 	object := func(mtef []byte) []byte {
-		return t.Compound(map[string][]byte{"Equation Native": t.EquationNative(mtef), "\x01CompObj": make([]byte, 40)})
+		return cfbtest.Compound(map[string][]byte{"Equation Native": t.EquationNative(mtef), "\x01CompObj": make([]byte, 40)})
 	}
 	group, _ := t.PPTPictures(t.PNG(4, 3))
 	picture := []t.ArtProp{{ID: 0x0104, Value: 1}}
@@ -543,8 +545,8 @@ func TestPresentationObjects(tt *testing.T) {
 		t.ChartType(0x1017, t.U16(0, 150, 0), false),
 		t.Rec(0x1034),
 	}}))
-	book := t.Compound(map[string][]byte{"Workbook": t.Cat(t.BOF(0x0005), t.EOF())})
-	project := t.Compound(t.VBAStreams("", 1252, t.VBAModule{Name: "Module1", Code: "Sub Hello()\r\nEnd Sub\r\n"}))
+	book := cfbtest.Compound(map[string][]byte{"Workbook": t.Cat(t.BOF(0x0005), t.EOF())})
+	project := cfbtest.Compound(vbatest.VBAStreams("", 1252, vbatest.VBAModule{Name: "Module1", Code: "Sub Hello()\r\nEnd Sub\r\n"}))
 	deck := pptDeck{
 		doc: [][]byte{
 			t.PPTContainer(t.PPTExObjList, 0, t.PPTExObj(1, 4, 40), t.PPTExObj(2, 3, 41)),
@@ -623,7 +625,7 @@ func TestPresentationLimitsAndDamage(tt *testing.T) {
 	// The stream cut in the middle of the document: nothing is found.
 	streams := pptDeck{slides: slides[:1]}.file().Streams()
 	streams["PowerPoint Document"] = streams["PowerPoint Document"][:40]
-	doc = mustExtract(tt, t.Compound(streams), nil)
+	doc = mustExtract(tt, cfbtest.Compound(streams), nil)
 	if _, ok := warning(doc.Parts[0].Warnings, gofastcore.WarnPartFailed); !ok || len(doc.Parts) != 1 {
 		tt.Errorf("parts: %+v", doc.Parts)
 	}

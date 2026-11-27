@@ -7,6 +7,35 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- Requires `go-fast-core` v0.1.13 (was v0.1.9). What the go-fast
+  libraries share is read by core's packages, in place of this library's
+  copies: compound files, code pages, the text conventions of the shared
+  model, symbol fonts, list labels and VBA projects. A fix to one of them
+  now reaches every library. Text kept as bytes in a code page (Excel 5/95
+  workbooks, Word 6/95 documents, property sets, VBA source) is decoded as
+  the other libraries decode it, which changes four things:
+  - More code pages are decoded: 866, 10007 (Mac Cyrillic), 20866 and
+    21866 (KOI8), 28591 to 28605 (ISO 8859), 50220 to 50222 (ISO-2022-JP),
+    51932 (EUC-JP) and 54936 (GB18030). Their text above ASCII was U+FFFD
+    before.
+  - A byte from 0x80 to 0x9F that a Windows code page leaves undefined is
+    the control character of that value, which is removed and counted
+    under `text.control_characters_removed`. It was U+FFFD, counted under
+    `text.unmapped_glyphs`.
+  - In a double-byte code page, a lead byte followed by an ASCII byte that
+    makes no character with it is U+FFFD and the ASCII character is kept.
+    The ASCII character was lost before.
+  - Code page 936's byte 0x80 is the euro sign, and code page 950 decodes
+    the Hong Kong characters (HKSCS) it leaves undefined.
+- A name (of a sheet, a custom property, a style) is kept whole up to
+  4 KiB; the bound was 1 KiB. A name or label cut at its bound is cut
+  between characters, never inside one.
+- Not changed: a workbook of Excel 5/95 or a property set that names
+  UTF-16 (code page 1200 or 1201) for strings it keeps as bytes is read
+  as before, the ASCII kept and the rest U+FFFD and counted.
+
 ## [0.1.5] - 2026-11-25
 
 ### Changed

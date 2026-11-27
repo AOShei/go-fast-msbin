@@ -2,6 +2,7 @@ package xls
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"math"
 	"slices"
@@ -11,10 +12,10 @@ import (
 	"sync"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/numfmt"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
+	"github.com/AOShei/go-fast-core/symbol"
 	"github.com/AOShei/go-fast-msbin/internal/grid"
-	"github.com/AOShei/go-fast-msbin/internal/symbol"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
 )
@@ -897,7 +898,7 @@ func (sh *sheet) finish() {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, warn.Unmapped(sh.unmapped))
 	}
 	if sh.c.undecoded > 0 {
-		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, undecodedMessage(sh.c.undecoded, sh.b.cp))
+		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnmappedGlyphs, undecodedMessage(sh.c.undecoded, cmp.Or(sh.b.cpNamed, sh.b.cp)))
 	}
 	part.Finish()
 }

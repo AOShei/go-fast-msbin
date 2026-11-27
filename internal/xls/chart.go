@@ -1,16 +1,16 @@
 package xls
 
 import (
-	"github.com/AOShei/go-fast-msbin/internal/codepage"
+	"github.com/AOShei/go-fast-core/charset"
 	"math"
 	"sort"
 	"strings"
 	"unicode/utf16"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/numfmt"
 	"github.com/AOShei/go-fast-msbin/internal/chart"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
 	"github.com/AOShei/go-fast-msbin/internal/grid"
 	"github.com/AOShei/go-fast-msbin/internal/ptg"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
@@ -201,7 +201,7 @@ func (sh *sheet) readChart() *chart.Chart {
 				}
 				text = string(utf16.Decode(u))
 			} else {
-				text, _ = codepage.Decode(sh.b.cp, raw[:min(int(b[7]), len(raw))])
+				text, _ = charset.DecodeCodePage(sh.b.cp, raw[:min(int(b[7]), len(raw))])
 			}
 			text, removed := clean.String([]byte(text), clean.Prose)
 			sh.removed += removed

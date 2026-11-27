@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/AOShei/go-fast-msbin/internal/codepage"
+	"github.com/AOShei/go-fast-core/charset"
 )
 
 // The streams' names.
@@ -360,7 +360,13 @@ func (res *Result) text(cp int, raw []byte) string {
 		res.ValueBytes += int64(len(raw) - maxValue)
 		raw = raw[:maxValue]
 	}
-	s, undecoded := codepage.Decode(cp, raw)
+	if cp == 1201 {
+		// UTF-16 with the high byte first is not a code page of a
+		// property set's strings of bytes: they are read as in a code
+		// page that is not known.
+		cp = -1
+	}
+	s, undecoded := charset.DecodeCodePage(cp, raw)
 	res.Undecoded += undecoded
 	return s
 }

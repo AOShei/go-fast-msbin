@@ -10,13 +10,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-msbin/internal/cfb"
-	"github.com/AOShei/go-fast-msbin/internal/clean"
-	"github.com/AOShei/go-fast-msbin/internal/label"
+	"github.com/AOShei/go-fast-core/cfb"
+	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/label"
+	"github.com/AOShei/go-fast-core/symbol"
 	"github.com/AOShei/go-fast-msbin/internal/media"
 	"github.com/AOShei/go-fast-msbin/internal/officeart"
 	"github.com/AOShei/go-fast-msbin/internal/stored"
-	"github.com/AOShei/go-fast-msbin/internal/symbol"
 	"github.com/AOShei/go-fast-msbin/internal/unit"
 	"github.com/AOShei/go-fast-msbin/internal/warn"
 )

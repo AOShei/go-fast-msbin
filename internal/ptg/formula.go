@@ -9,7 +9,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/AOShei/go-fast-msbin/internal/codepage"
+	"github.com/AOShei/go-fast-core/charset"
 )
 
 // Package ptg turns the compiled formulas of a workbook in the binary
@@ -271,7 +271,7 @@ func (p *parser) base(t byte) {
 		n := int(p.u8())
 		var s string
 		if p.book.BIFF5 {
-			s, _ = codepage.Decode(p.book.CodePage, p.take(n))
+			s, _ = charset.DecodeCodePage(p.book.CodePage, p.take(n))
 		} else {
 			s = p.chars(n, p.u8(), p.take)
 		}
@@ -786,7 +786,7 @@ func (p *parser) array() {
 			case 0x02:
 				var s string
 				if p.book.BIFF5 {
-					s, _ = codepage.Decode(p.book.CodePage, p.takeExtra(int(p.takeExtra(1)[0])))
+					s, _ = charset.DecodeCodePage(p.book.CodePage, p.takeExtra(int(p.takeExtra(1)[0])))
 				} else {
 					n := int(binary.LittleEndian.Uint16(p.takeExtra(2)))
 					s = p.chars(n, p.takeExtra(1)[0], p.takeExtra)

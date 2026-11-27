@@ -7,6 +7,14 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Fixed
+
+- A VBA project that names UTF-16 (code page 1200 or 1201) as the code
+  page of its source has the source read as bytes, the ASCII kept and the
+  rest U+FFFD and counted, as before v0.2.0. In v0.2.0 such source was
+  read in pairs of bytes. Requires `go-fast-core` v0.1.14 (was v0.1.13),
+  which has the fix.
+
 ## [0.2.0] - 2026-11-27
 
 ### Changed

@@ -6,6 +6,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-core/cfb/cfbtest"
+	"github.com/AOShei/go-fast-core/vba/vbatest"
 	t "github.com/AOShei/go-fast-msbin/internal/msbintest"
 )
 
@@ -41,5 +42,21 @@ func TestStringsOfBytesAreNotUTF16(tt *testing.T) {
 	doc := mustExtract(tt, data, &gofastcore.Options{})
 	if doc.Metadata.Title != "A title" || doc.Metadata.Subject != "Caf�" {
 		tt.Errorf("properties: title %q, subject %q", doc.Metadata.Title, doc.Metadata.Subject)
+	}
+}
+
+// The source of a VBA module is bytes too. A project that names UTF-16
+// as its code page has its source read as bytes in a code page that is
+// not known, and never in pairs (go-fast-core's vba, from v0.1.14).
+func TestMacroSourceIsNotUTF16(tt *testing.T) {
+	for _, cp := range []int{1200, 1201} {
+		streams := with(wordFile(), vbatest.VBAStreams("Macros/", cp, vbatest.VBAModule{Name: "Module1", Code: "Sub Hello()\r\n    MsgBox \"Caf\xe9\"\r\nEnd Sub\r\n"}))
+		doc := mustExtract(tt, cfbtest.Compound(streams), nil)
+		if len(doc.Parts) != 2 || len(doc.Parts[1].Blocks) != 1 {
+			tt.Fatalf("code page %d: %+v", cp, doc.Parts)
+		}
+		if got, want := doc.Parts[1].Blocks[0].Text, "Sub Hello()\n    MsgBox \"Caf�\"\nEnd Sub"; got != want {
+			tt.Errorf("code page %d: %q, want %q", cp, got, want)
+		}
 	}
 }

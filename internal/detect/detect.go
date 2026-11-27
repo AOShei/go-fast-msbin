@@ -9,6 +9,7 @@ import (
 	"io"
 
 	"github.com/AOShei/go-fast-core/cfb"
+	"github.com/AOShei/go-fast-core/envelope"
 )
 
 // BIFF8 is the version of a workbook of Excel 97 to 2003.
@@ -103,7 +104,9 @@ func Compound(f *cfb.File) Info {
 		return Info{Format: Ppt, Version: "PowerPoint 95 or older"}
 	}
 	switch {
-	case f.Has("EncryptedPackage"), f.Has("\x06DataSpaces"):
+	case envelope.Detect(f) != envelope.None:
+		// The envelope of an encrypted package, as go-fast-ooxml and
+		// go-fast-pdf know it too.
 		return Info{Other: "an encrypted Office Open XML package (.docx, .xlsx, .pptx)"}
 	case f.Has("__properties_version1.0"):
 		return Info{Other: "an Outlook message (.msg)"}

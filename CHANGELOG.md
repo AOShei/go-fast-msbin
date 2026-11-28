@@ -7,6 +7,8 @@ minor version may change the API.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-28
+
 ### Changed
 
 - Requires `go-fast-core` v0.1.17 (was v0.1.14). The envelope of an

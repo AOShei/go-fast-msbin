@@ -5,7 +5,7 @@ Extracts the binary Office formats (Word `.doc`, Excel `.xls` and PowerPoint
 model, [`gofastcore.Document`](https://github.com/AOShei/go-fast-core).
 Standard library and go-fast modules only.
 
-**Status: v0.2.2.** The three
+**Status: v0.2.3.** The three
 formats are read, encrypted files with their password.
 [`SECURITY.md`](SECURITY.md) says what a hostile file cannot do and lists the
 limits; [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) has what each phase

@@ -10,6 +10,7 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-core/cfb"
 	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/envelope"
 	"github.com/AOShei/go-fast-msbin/internal/detect"
 )
 
@@ -200,6 +201,11 @@ func refusal(in detect.Info) error {
 		what = in.Version + " file: this generation of the format is not read"
 	case in.Format != "":
 		what = "a ." + in.Format + " file of a generation the file does not state: not read"
+	case in.Envelope != envelope.None:
+		// The words are go-fast-core's, the same in go-fast-ooxml and
+		// go-fast-pdf: the package may be an XPS document as well as an
+		// Office Open XML one.
+		what = envelope.Message(in.Envelope, "package")
 	case in.Other != "":
 		what = "the file is " + in.Other + ", not one of the binary Office formats (.doc, .xls, .ppt)"
 	}

@@ -57,6 +57,10 @@ type Info struct {
 	// Other says what a file that is none of the three formats is, in
 	// words that fit after "the file is ".
 	Other string
+	// Envelope is what protects the package, for a compound file that is
+	// the envelope of an encrypted package (an Office Open XML or XPS
+	// document) and none of the three formats.
+	Envelope envelope.Protection
 }
 
 // Stream names in the root storage.
@@ -107,7 +111,7 @@ func Compound(f *cfb.File) Info {
 	case envelope.Detect(f) != envelope.None:
 		// The envelope of an encrypted package, as go-fast-ooxml and
 		// go-fast-pdf know it too.
-		return Info{Other: "an encrypted Office Open XML package (.docx, .xlsx, .pptx)"}
+		return Info{Envelope: envelope.Detect(f)}
 	case f.Has("__properties_version1.0"):
 		return Info{Other: "an Outlook message (.msg)"}
 	case f.Has("VisioDocument"):

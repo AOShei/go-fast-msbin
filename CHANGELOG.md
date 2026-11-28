@@ -7,6 +7,16 @@ minor version may change the API.
 
 ## [Unreleased]
 
+### Changed
+
+- A compound file that is the envelope of an encrypted package is refused
+  in go-fast-core's words, which say what protects it: rights management,
+  a password or certificates, or an encryption the file does not state.
+  The refusal said "an encrypted Office Open XML package (.docx, .xlsx,
+  .pptx)" for all three, though the package may be an XPS document. It
+  is `ErrUnsupported` as before. Requires `go-fast-core` v0.1.18 (was
+  v0.1.17).
+
 ## [0.2.2] - 2026-11-28
 
 ### Changed
